@@ -1,0 +1,60 @@
+[configuration]
+storageEngineExcludeTypes=[3,4,5]
+logAntiQuorum=0
+encryptModes=['disabled']
+tenantModes=['disabled']
+# Snapshot restore only supports one region; keep the 7.3 step from creating remote or satellite TLogs.
+generateFearless=false
+datacenters=1
+
+[[test]]
+testTitle="SnapSimplePre"
+clearAfterTest=false
+disabledFailureInjectionWorkloads='Attrition'
+
+        [[test.workload]]
+        testName="SnapTest"
+        numSnaps=1
+        maxSnapDelay=30.0
+        testID=0
+
+[[test]]
+testTitle="SnapSimpleTakeSnap"
+clearAfterTest=false
+disabledFailureInjectionWorkloads='Attrition'
+
+        [[test.workload]]
+        testName="SnapTest"
+        numSnaps=1
+        maxSnapDelay=5.0
+        testID=1
+
+[[test]]
+testTitle="SnapSimplePost"
+clearAfterTest=false
+disabledFailureInjectionWorkloads='Attrition'
+
+        [[test.workload]]
+        testName="SnapTest"
+        numSnaps=1
+        maxSnapDelay=3.0
+        testID=2
+
+[[test]]
+testTitle="SnapCreateNotWhitelistedBinaryPath"
+disabledFailureInjectionWorkloads='Attrition'
+
+        [[test.workload]]
+        testName="SnapTest"
+        numSnaps=1
+        maxSnapDelay=3.0
+        testID=4
+
+[[test]]
+testTitle="SnapSimpleShutdown"
+
+        [[test.workload]]
+        testName="SaveAndKill"
+        restartInfoLocation="simfdb/restartInfo.ini"
+        testDuration=10.0
+        isRestoring=1
