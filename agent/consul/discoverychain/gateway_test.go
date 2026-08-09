@@ -1067,3 +1067,84 @@ func TestGatewayChainSynthesizer_ComplexChain(t *testing.T) {
 		})
 	}
 }
+
+// TestGatewayChainSynthesizer_ComposedDestinationProtocolFromProxyDefaults
+// reproduces gateway synthesis against a real compiled backend chain whose
+// http protocol comes only from proxy-defaults. The backend ServiceRouter
+// targets an entry-less destination; synthesis must still treat that
+// destination as http instead of falling back to tcp.
+func TestGatewayChainSynthesizer_ComposedDestinationProtocolFromProxyDefaults(t *testing.T) {
+	t.Parallel()
+
+	entries := configentry.NewDiscoveryChainSet()
+	entries.AddProxyDefaults(&structs.ProxyConfigEntry{
+		Kind:     structs.ProxyDefaults,
+		Name:     structs.ProxyConfigGlobal,
+		Protocol: "http",
+		Config: map[string]interface{}{
+			"protocol": "http",
+		},
+	})
+	entries.AddRouters(&structs.ServiceRouterConfigEntry{
+		Kind: structs.ServiceRouter,
+		Name: "foo",
+		Routes: []structs.ServiceRoute{{
+			Match: &structs.ServiceRouteMatch{
+				HTTP: &structs.ServiceRouteHTTPMatch{
+					PathPrefix: "/api",
+				},
+			},
+			Destination: &structs.ServiceRouteDestination{
+				Service: "bar",
+			},
+		}},
+	})
+
+	compiled, err := Compile(CompileRequest{
+		ServiceName:           "foo",
+		EvaluateInNamespace:   "default",
+		EvaluateInPartition:   "default",
+		EvaluateInDatacenter:  "dc1",
+		EvaluateInTrustDomain: "domain",
+		Entries:               entries,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "http", compiled.Protocol)
+
+	synthesizer := NewGatewayChainSynthesizer("dc1", "domain", "suffix", &structs.APIGatewayConfigEntry{
+		Kind: structs.APIGateway,
+		Name: "gateway",
+	})
+	synthesizer.SetHostname("*")
+	synthesizer.AddHTTPRoute(structs.HTTPRouteConfigEntry{
+		Kind: structs.HTTPRoute,
+		Name: "http-route",
+		Rules: []structs.HTTPRouteRule{{
+			Services: []structs.HTTPService{{
+				Name: "foo",
+			}},
+		}},
+	})
+
+	_, discoveryChains, err := synthesizer.Synthesize(compiled)
+	require.NoError(t, err)
+	require.Len(t, discoveryChains, 1)
+	require.Equal(t, "http", discoveryChains[0].Protocol)
+
+	start := discoveryChains[0].Nodes[discoveryChains[0].StartNode]
+	require.NotNil(t, start)
+	require.True(t, start.IsRouter())
+
+	var foundBar bool
+	for _, route := range start.Routes {
+		if route.Definition == nil || route.Definition.Destination == nil {
+			continue
+		}
+		if route.Definition.Destination.Service != "bar" {
+			continue
+		}
+		foundBar = true
+		require.Equal(t, "resolver:bar.default.default.dc1", route.NextNode)
+	}
+	require.True(t, foundBar, "expected composed gateway route targeting bar")
+}

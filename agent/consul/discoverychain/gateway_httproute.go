@@ -45,6 +45,22 @@ func httpServiceDefault(entry structs.ConfigEntry, meta map[string]string) *stru
 	}
 }
 
+// httpServiceDefaultForDestination creates a synthetic http service-defaults
+// entry for a service-router destination. Gateway synthesis omits proxy-defaults,
+// so destinations without their own service-defaults would otherwise compile as
+// tcp and fail protocol consistency against the http gateway chain.
+func httpServiceDefaultForDestination(dest *structs.ServiceRouteDestination) *structs.ServiceConfigEntry {
+	if dest == nil || dest.Service == "" {
+		return nil
+	}
+	return &structs.ServiceConfigEntry{
+		Kind:           structs.ServiceDefaults,
+		Name:           dest.Service,
+		Protocol:       "http",
+		EnterpriseMeta: structs.NewEnterpriseMetaWithPartition(dest.Partition, dest.Namespace),
+	}
+}
+
 func synthesizeHTTPRouteDiscoveryChain(route structs.HTTPRouteConfigEntry, serviceRouters map[structs.ServiceName][]*structs.ServiceRoute) (structs.IngressService, *structs.ServiceRouterConfigEntry, []*structs.ServiceSplitterConfigEntry, []*structs.ServiceConfigEntry) {
 	meta := route.GetMeta()
 	splitters := []*structs.ServiceSplitterConfigEntry{}
@@ -151,6 +167,9 @@ func httpRouteToDiscoveryChain(route structs.HTTPRouteConfigEntry, serviceRouter
 							continue
 						}
 						mergedDest := mergeServiceRouteDestination(&destination, svcRoute.Destination)
+						if def := httpServiceDefaultForDestination(mergedDest); def != nil {
+							defaults = append(defaults, def)
+						}
 						router.Routes = append(router.Routes, structs.ServiceRoute{
 							Match:       mergedMatch,
 							Destination: mergedDest,
