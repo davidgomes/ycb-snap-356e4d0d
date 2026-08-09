@@ -32,6 +32,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -167,5 +168,140 @@ class EndpointToPartitionsManagerTest {
                 arguments(2, 5, List.of(0, 1), List.of(0, 1, 2, 3, 4), "Should assign correct partitions when partitions differ between topics"),
                 arguments(3, 3, List.of(0, 1, 2), List.of(0, 1, 2), "Should assign correct partitions when partitions same between topics")
         );
+    }
+
+    @ParameterizedTest(name = "{5}")
+    @MethodSource("nonPrefixTaskAssignmentProvider")
+    void testEndpointToPartitionsWithNonPrefixActiveTaskIds(int topicAPartitions,
+                                                           int topicBPartitions,
+                                                           Set<Integer> assignedTasks,
+                                                           List<Integer> topicAExpectedPartitions,
+                                                           List<Integer> topicBExpectedPartitions,
+                                                           String testName) {
+        assertEndpointToPartitionsForUnequalSourceTopics(
+            topicAPartitions,
+            topicBPartitions,
+            assignedTasks,
+            Set.of(),
+            topicAExpectedPartitions,
+            topicBExpectedPartitions,
+            List.of(),
+            List.of()
+        );
+    }
+
+    @ParameterizedTest(name = "{5}")
+    @MethodSource("nonPrefixTaskAssignmentProvider")
+    void testEndpointToPartitionsWithNonPrefixStandbyTaskIds(int topicAPartitions,
+                                                            int topicBPartitions,
+                                                            Set<Integer> assignedTasks,
+                                                            List<Integer> topicAExpectedPartitions,
+                                                            List<Integer> topicBExpectedPartitions,
+                                                            String testName) {
+        assertEndpointToPartitionsForUnequalSourceTopics(
+            topicAPartitions,
+            topicBPartitions,
+            Set.of(),
+            assignedTasks,
+            List.of(),
+            List.of(),
+            topicAExpectedPartitions,
+            topicBExpectedPartitions
+        );
+    }
+
+    static Stream<Arguments> nonPrefixTaskAssignmentProvider() {
+        return Stream.of(
+            arguments(
+                2,
+                5,
+                Set.of(2, 3, 4),
+                List.of(),
+                List.of(2, 3, 4),
+                "Should omit smaller source topic when member owns only high task IDs"
+            ),
+            arguments(
+                2,
+                5,
+                Set.of(1, 3, 4),
+                List.of(1),
+                List.of(1, 3, 4),
+                "Should report only existing partitions for a non-prefix task set"
+            ),
+            arguments(
+                2,
+                5,
+                Set.of(0, 4),
+                List.of(0),
+                List.of(0, 4),
+                "Should map sparse task IDs to matching partitions without inventing missing ones"
+            )
+        );
+    }
+
+    private void assertEndpointToPartitionsForUnequalSourceTopics(int topicAPartitions,
+                                                                 int topicBPartitions,
+                                                                 Set<Integer> activeTasks,
+                                                                 Set<Integer> standbyTasks,
+                                                                 List<Integer> topicAExpectedActivePartitions,
+                                                                 List<Integer> topicBExpectedActivePartitions,
+                                                                 List<Integer> topicAExpectedStandbyPartitions,
+                                                                 List<Integer> topicBExpectedStandbyPartitions) {
+        MetadataImage metadataImage = new MetadataImageBuilder()
+            .addTopic(Uuid.randomUuid(), "Topic-A", topicAPartitions)
+            .addTopic(Uuid.randomUuid(), "Topic-B", topicBPartitions)
+            .build();
+        configuredSubtopologyOne = new ConfiguredSubtopology(
+            Math.max(topicAPartitions, topicBPartitions),
+            Set.of("Topic-A", "Topic-B"),
+            new HashMap<>(),
+            new HashSet<>(),
+            new HashMap<>()
+        );
+
+        when(streamsGroupMember.assignedTasks()).thenReturn(
+            new TasksTupleWithEpochs(
+                activeTasks.isEmpty() ? Map.of() : mkTasksPerSubtopologyWithCommonEpoch(0, mkEntry("0", activeTasks)),
+                standbyTasks.isEmpty() ? Map.of() : mkTasksPerSubtopology(mkEntry("0", standbyTasks)),
+                Map.of()
+            )
+        );
+        when(streamsGroup.configuredTopology()).thenReturn(Optional.of(configuredTopology));
+        SortedMap<String, ConfiguredSubtopology> configuredSubtopologyOneMap = new TreeMap<>();
+        configuredSubtopologyOneMap.put("0", configuredSubtopologyOne);
+        when(configuredTopology.subtopologies()).thenReturn(Optional.of(configuredSubtopologyOneMap));
+
+        StreamsGroupHeartbeatResponseData.EndpointToPartitions result = EndpointToPartitionsManager.endpointToPartitions(
+            streamsGroupMember,
+            responseEndpoint,
+            streamsGroup,
+            new KRaftCoordinatorMetadataImage(metadataImage)
+        );
+
+        assertEquals(responseEndpoint, result.userEndpoint());
+        assertTopicPartitions(result.activePartitions(), topicAExpectedActivePartitions, topicBExpectedActivePartitions);
+        assertTopicPartitions(result.standbyPartitions(), topicAExpectedStandbyPartitions, topicBExpectedStandbyPartitions);
+    }
+
+    private static void assertTopicPartitions(List<StreamsGroupHeartbeatResponseData.TopicPartition> topicPartitions,
+                                             List<Integer> topicAExpectedPartitions,
+                                             List<Integer> topicBExpectedPartitions) {
+        int expectedTopicCount = (topicAExpectedPartitions.isEmpty() ? 0 : 1) + (topicBExpectedPartitions.isEmpty() ? 0 : 1);
+        assertEquals(expectedTopicCount, topicPartitions.size());
+
+        List<StreamsGroupHeartbeatResponseData.TopicPartition> sorted = new ArrayList<>(topicPartitions);
+        sorted.sort(Comparator.comparing(StreamsGroupHeartbeatResponseData.TopicPartition::topic));
+
+        int index = 0;
+        if (!topicAExpectedPartitions.isEmpty()) {
+            StreamsGroupHeartbeatResponseData.TopicPartition topicAPartition = sorted.get(index++);
+            assertEquals("Topic-A", topicAPartition.topic());
+            assertEquals(topicAExpectedPartitions, topicAPartition.partitions().stream().sorted().toList());
+        }
+        if (!topicBExpectedPartitions.isEmpty()) {
+            StreamsGroupHeartbeatResponseData.TopicPartition topicBPartition = sorted.get(index);
+            assertEquals("Topic-B", topicBPartition.topic());
+            assertEquals(topicBExpectedPartitions, topicBPartition.partitions().stream().sorted().toList());
+        }
     }
 }

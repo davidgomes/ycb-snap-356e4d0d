@@ -24,7 +24,6 @@ import org.apache.kafka.coordinator.group.streams.StreamsGroup;
 import org.apache.kafka.coordinator.group.streams.StreamsGroupMember;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -100,25 +99,35 @@ public class EndpointToPartitionsManager {
         return topicPartitionsForTasks;
     }
 
+    /**
+     * Maps assigned task IDs to source-topic partitions using the same correspondence as
+     * {@code PartitionGrouper#partitionGroups}: task {@code N} consumes partition {@code N} of a
+     * source topic only when that topic has at least {@code N + 1} partitions. Topics with no
+     * matching partitions for the member's tasks are omitted.
+     */
     private static List<StreamsGroupHeartbeatResponseData.TopicPartition> topicPartitionListForTask(final Set<Integer> taskSet,
                                                                                                     final Set<String> topicNames,
                                                                                                     final CoordinatorMetadataImage metadataImage) {
-        return topicNames.stream().map(topic -> {
+        List<StreamsGroupHeartbeatResponseData.TopicPartition> topicPartitions = new ArrayList<>();
+        for (String topic : topicNames) {
             Optional<CoordinatorMetadataImage.TopicMetadata> topicMetadata = metadataImage.topicMetadata(topic);
             if (topicMetadata.isEmpty()) {
                 throw new IllegalStateException("Topic " + topic + " not found in metadata image");
             }
             int numPartitionsForTopic = topicMetadata.get().partitionCount();
-            StreamsGroupHeartbeatResponseData.TopicPartition tp = new StreamsGroupHeartbeatResponseData.TopicPartition();
-            tp.setTopic(topic);
-            List<Integer> tpPartitions = new ArrayList<>(taskSet);
-            if (numPartitionsForTopic < taskSet.size()) {
-                Collections.sort(tpPartitions);
-                tp.setPartitions(tpPartitions.subList(0, numPartitionsForTopic));
-            } else {
-                tp.setPartitions(tpPartitions);
+            List<Integer> partitions = new ArrayList<>();
+            for (Integer taskId : taskSet) {
+                if (taskId < numPartitionsForTopic) {
+                    partitions.add(taskId);
+                }
             }
-            return tp;
-        }).toList();
+            if (!partitions.isEmpty()) {
+                StreamsGroupHeartbeatResponseData.TopicPartition tp = new StreamsGroupHeartbeatResponseData.TopicPartition();
+                tp.setTopic(topic);
+                tp.setPartitions(partitions);
+                topicPartitions.add(tp);
+            }
+        }
+        return topicPartitions;
     }
 }
