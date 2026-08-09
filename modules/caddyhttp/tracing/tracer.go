@@ -62,17 +62,21 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	traceExporter, err := autoexport.NewSpanExporter(ctx)
-	if err != nil {
-		return ot, fmt.Errorf("creating trace exporter error: %w", err)
-	}
-
 	ot.propagators = autoprop.NewTextMapPropagator()
 
-	tracerProvider := globalTracerProvider.getTracerProvider(
-		sdktrace.WithBatcher(traceExporter),
-		sdktrace.WithResource(res),
-	)
+	tracerProvider, err := globalTracerProvider.getTracerProvider(func() ([]sdktrace.TracerProviderOption, error) {
+		traceExporter, err := autoexport.NewSpanExporter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("creating trace exporter error: %w", err)
+		}
+		return []sdktrace.TracerProviderOption{
+			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithResource(res),
+		}, nil
+	})
+	if err != nil {
+		return ot, err
+	}
 
 	ot.handler = otelhttp.NewHandler(http.HandlerFunc(ot.serveHTTP),
 		ot.spanName,

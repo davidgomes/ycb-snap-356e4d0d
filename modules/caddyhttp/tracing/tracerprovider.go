@@ -19,20 +19,26 @@ type tracerProvider struct {
 	tracerProvidersCounter int
 }
 
-// getTracerProvider create or return an existing global TracerProvider
-func (t *tracerProvider) getTracerProvider(opts ...sdktrace.TracerProviderOption) *sdktrace.TracerProvider {
+// getTracerProvider returns the shared TracerProvider, creating it if needed.
+// buildOpts runs only when a new provider is created; it is not invoked on reuse.
+// If buildOpts fails, no provider is created and the reference counter is unchanged.
+func (t *tracerProvider) getTracerProvider(buildOpts func() ([]sdktrace.TracerProviderOption, error)) (*sdktrace.TracerProvider, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.tracerProvidersCounter++
-
-	if t.tracerProvider == nil {
-		t.tracerProvider = sdktrace.NewTracerProvider(
-			opts...,
-		)
+	if t.tracerProvider != nil {
+		t.tracerProvidersCounter++
+		return t.tracerProvider, nil
 	}
 
-	return t.tracerProvider
+	opts, err := buildOpts()
+	if err != nil {
+		return nil, err
+	}
+
+	t.tracerProvider = sdktrace.NewTracerProvider(opts...)
+	t.tracerProvidersCounter++
+	return t.tracerProvider, nil
 }
 
 // cleanupTracerProvider gracefully shutdown a TracerProvider
