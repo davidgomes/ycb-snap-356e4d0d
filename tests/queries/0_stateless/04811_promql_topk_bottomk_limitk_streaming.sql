@@ -68,8 +68,12 @@ SELECT timeSeriesSelectTopKGroups(g, v, -1::Int64) FROM topk_input; -- { serverE
 SELECT timeSeriesSelectTopKGroups(g, [1]::Array(UInt64), 1) FROM topk_input; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesSelectLimitKGroups(g, v, 1) FROM topk_input; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT timeSeriesSelectTopKGroups(1)(g, v, 1) FROM topk_input; -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
--- A corrupted serialized state claiming 2^56 - 1 time steps must fail fast instead of attempting a huge allocation.
-SELECT finalizeAggregation(CAST(unhex('0101FFFFFFFFFFFFFF7F'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError TOO_LARGE_ARRAY_SIZE }
+-- A corrupted serialized state claiming 2^56 - 1 time steps must fail when the buffer runs out, without a huge allocation.
+SELECT finalizeAggregation(CAST(unhex('0101FFFFFFFFFFFFFF7F'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError CANNOT_READ_ALL_DATA }
+-- Same when the claimed heap size is enormous but still <= k: do not allocate that many entries up front.
+SELECT finalizeAggregation(CAST(unhex('010101FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7F'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError CANNOT_READ_ALL_DATA }
+-- A heap larger than that step's k is still rejected.
+SELECT finalizeAggregation(CAST(unhex('010101010000000000000002'), 'AggregateFunction(timeSeriesSelectTopKGroups, UInt64, Array(Nullable(Float64)), UInt64)')); -- { serverError INCORRECT_DATA }
 
 DROP TABLE topk_input;
 

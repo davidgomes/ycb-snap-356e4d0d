@@ -1,0 +1,4 @@
+-- timeSeriesSelect*Groups: more than 1,000,000 time steps round-trip
+1	1000001
+1000001
+1	1000001	2

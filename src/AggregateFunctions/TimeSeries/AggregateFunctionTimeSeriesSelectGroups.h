@@ -28,7 +28,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 struct Settings;
@@ -82,9 +81,6 @@ public:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesSelectGroups<kind, ValueType>>;
 
     static constexpr UInt8 FORMAT_VERSION = 1;
-
-    /// Sanity limit for the sizes read by `deserialize()`: corrupted data throws TOO_LARGE_ARRAY_SIZE instead of attempting a huge allocation.
-    static constexpr size_t MAX_ARRAY_SIZE_TO_DESERIALIZE = 1'000'000;
 
     static constexpr const char * getNameImpl()
     {
@@ -225,15 +221,20 @@ public:
 
         size_t num_steps = 0;
         readVarUInt(num_steps, buf);
-        if (num_steps > MAX_ARRAY_SIZE_TO_DESERIALIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Cannot deserialize state of aggregate function {}: too many time steps: {} (maximum: {})",
-                            getName(), num_steps, MAX_ARRAY_SIZE_TO_DESERIALIZE);
-        state.k_per_step.resize(num_steps);
-        for (UInt64 & k : state.k_per_step)
-            readBinaryLittleEndian(k, buf);
 
-        state.heaps.resize(num_steps);
+        /// Read incrementally: `add`/`serialize` do not cap the number of time steps, so neither does deserialize.
+        /// A corrupted payload that claims an enormous size then fails when the buffer runs out, without a huge upfront allocation.
+        state.k_per_step.clear();
+        for (size_t t = 0; t != num_steps; ++t)
+        {
+            UInt64 k = 0;
+            readBinaryLittleEndian(k, buf);
+            state.k_per_step.push_back(k);
+        }
+
+        /// `num_steps` is now known to be real (we just read that many `k` values), so reserving is proportional to the payload.
+        state.heaps.clear();
+        state.heaps.reserve(state.k_per_step.size());
         for (size_t t = 0; t != num_steps; ++t)
         {
             size_t heap_size = 0;
@@ -242,18 +243,17 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                                 "Cannot deserialize state of aggregate function {}: {} entries at time step {} exceed k = {}",
                                 getName(), heap_size, t, state.k_per_step[t]);
-            if (heap_size > MAX_ARRAY_SIZE_TO_DESERIALIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Cannot deserialize state of aggregate function {}: too many entries at time step {}: {} (maximum: {})",
-                                getName(), t, heap_size, MAX_ARRAY_SIZE_TO_DESERIALIZE);
 
             /// Entries are written in the order of the underlying array, so reading them back preserves the heap layout.
-            state.heaps[t].resize(heap_size);
-            for (Entry & entry : state.heaps[t])
+            Heap heap;
+            for (size_t i = 0; i != heap_size; ++i)
             {
+                Entry entry;
                 readBinaryLittleEndian(entry.rank, buf);
                 readBinaryLittleEndian(entry.group, buf);
+                heap.push_back(entry);
             }
+            state.heaps.push_back(std::move(heap));
         }
 
         state.initialized = true;
