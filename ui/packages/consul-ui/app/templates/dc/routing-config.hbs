@@ -1,0 +1,54 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+
+  <DataLoader @src={{
+    uri '/${partition}/${nspace}/${dc}/discovery-chain/${name}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        name=route.params.name
+      )
+    }}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+  loader.data
+as |item|}}
+<AppView>
+  <:breadcrumbs>
+    <Hds::Breadcrumb>
+      <Hds::Breadcrumb::Item @text="All Services" @route="dc.services" @model={{route.params.dc}} data-test-back />
+    </Hds::Breadcrumb>
+  </:breadcrumbs>
+  <:header>
+    <h1>
+      <route.Title @title={{item.Chain.ServiceName}} />
+    </h1>
+    <Consul::Source @source={{t "routes.dc.routing-config.source"}} @withInfo={{true}} />
+  </:header>
+  <:content>
+    <div class="container">
+      <Consul::DiscoveryChain
+        @chain={{item.Chain}}
+      />
+    </div>
+  </:content>
+</AppView>
+{{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

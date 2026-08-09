@@ -1,0 +1,100 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+// List
+.consul-auth-method-list ul {
+  .locality::before {
+    @extend %with-public-default-mask, %as-pseudo;
+    margin-right: 4px;
+  }
+}
+
+.consul-auth-method-type--hds {
+  display: inline-flex;
+  align-items: center;
+}
+
+// View
+.consul-auth-method-view {
+  margin-bottom: 32px;
+  section {
+    @extend %body-200-regular;
+    width: 100%;
+    position: relative;
+    overflow-y: auto;
+    h2 {
+      @extend %display-400-semibold;
+      padding-bottom: 12px;
+    }
+    table {
+      table-layout: fixed;
+      thead td {
+        @extend %body-200-semibold;
+        color: var(--token-color-foreground-faint);
+      }
+      tbody {
+        td {
+          color: var(--token-color-hashicorp-brand);
+          word-break: break-word;
+        }
+        tr {
+          cursor: default;
+        }
+        tr:hover {
+          box-shadow: none;
+        }
+      }
+    }
+  }
+  dl,
+  section dl {
+    @extend %tabular-dl;
+  }
+  section dt {
+    width: 30%;
+  }
+  section dd {
+    width: 70%;
+  }
+}
+
+// Binding List
+.consul-auth-method-binding-list {
+  p {
+    margin-bottom: 4px !important;
+  }
+  h2 {
+    @extend %display-400-semibold;
+    padding-bottom: 12px;
+  }
+  dl {
+    @extend %tabular-dl;
+  }
+  code {
+    background-color: var(--token-color-surface-strong);
+    padding: 0 12px;
+  }
+}
+
+// Nspace List
+.consul-auth-method-nspace-list {
+  thead {
+    td {
+      @extend %body-200-semibold;
+      color: var(--token-color-foreground-faint) !important;
+    }
+  }
+  tbody {
+    td {
+      color: var(--token-color-hashicorp-brand);
+    }
+    tr {
+      cursor: default;
+    }
+    tr:hover {
+      box-shadow: none;
+    }
+  }
+}

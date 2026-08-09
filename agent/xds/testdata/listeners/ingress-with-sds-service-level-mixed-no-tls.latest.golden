@@ -1,0 +1,134 @@
+{
+  "nonce": "00000001",
+  "resources": [
+    {
+      "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
+      "address": {
+        "socketAddress": {
+          "address": "1.2.3.4",
+          "portValue": 8080
+        }
+      },
+      "filterChains": [
+        {
+          "filterChainMatch": {
+            "serverNames": [
+              "s1.example.com"
+            ]
+          },
+          "filters": [
+            {
+              "name": "envoy.filters.network.http_connection_manager",
+              "typedConfig": {
+                "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                "httpFilters": [
+                  {
+                    "name": "envoy.filters.http.router",
+                    "typedConfig": {
+                      "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                    }
+                  }
+                ],
+                "rds": {
+                  "configSource": {
+                    "ads": {},
+                    "resourceApiVersion": "V3"
+                  },
+                  "routeConfigName": "8080_s1"
+                },
+                "statPrefix": "ingress_upstream_8080_s1",
+                "tracing": {
+                  "randomSampling": {}
+                },
+                "upgradeConfigs": [
+                  {
+                    "upgradeType": "websocket"
+                  }
+                ]
+              }
+            }
+          ],
+          "transportSocket": {
+            "name": "tls",
+            "typedConfig": {
+              "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+              "commonTlsContext": {
+                "alpnProtocols": [
+                  "http/1.1"
+                ],
+                "tlsCertificateSdsSecretConfigs": [
+                  {
+                    "name": "s1.example.com-cert",
+                    "sdsConfig": {
+                      "apiConfigSource": {
+                        "apiType": "GRPC",
+                        "grpcServices": [
+                          {
+                            "envoyGrpc": {
+                              "clusterName": "sds-cluster-1"
+                            },
+                            "timeout": "5s"
+                          }
+                        ],
+                        "transportApiVersion": "V3"
+                      },
+                      "resourceApiVersion": "V3"
+                    }
+                  }
+                ],
+                "tlsParams": {}
+              },
+              "requireClientCertificate": false
+            }
+          }
+        },
+        {
+          "filters": [
+            {
+              "name": "envoy.filters.network.http_connection_manager",
+              "typedConfig": {
+                "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+                "httpFilters": [
+                  {
+                    "name": "envoy.filters.http.router",
+                    "typedConfig": {
+                      "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                    }
+                  }
+                ],
+                "rds": {
+                  "configSource": {
+                    "ads": {},
+                    "resourceApiVersion": "V3"
+                  },
+                  "routeConfigName": "8080"
+                },
+                "statPrefix": "ingress_upstream_8080",
+                "tracing": {
+                  "randomSampling": {}
+                },
+                "upgradeConfigs": [
+                  {
+                    "upgradeType": "websocket"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "listenerFilters": [
+        {
+          "name": "envoy.filters.listener.tls_inspector",
+          "typedConfig": {
+            "@type": "type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector"
+          }
+        }
+      ],
+      "name": "http:1.2.3.4:8080",
+      "trafficDirection": "OUTBOUND"
+    }
+  ],
+  "typeUrl": "type.googleapis.com/envoy.config.listener.v3.Listener",
+  "versionInfo": "00000001"
+}

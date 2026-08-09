@@ -1,0 +1,115 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#let
+
+  (to-hash @proxies "Service.Proxy.DestinationServiceID")
+
+as |proxies|}}
+<ListCollection
+  class="consul-service-instance-list"
+  @items={{@items}}
+  ...attributes>
+  <:header as |item index|>
+    {{#if (eq @routeName "dc.services.show")}}
+      <a data-test-service-name href={{href-to @routeName item.Service.Service}}>
+        {{item.Service.ID}}
+      </a>
+    {{else}}
+      <a data-test-service-name href={{href-to @routeName item.Service.Service item.Node.Node (or item.Service.ID item.Service.Service)}}>
+        {{item.Service.ID}}
+      </a>
+    {{/if}}
+  </:header>
+  <:details as |item index|>
+
+{{#let
+  (get proxies item.Service.ID)
+as |proxy|}}
+  {{#let
+    (merge-checks
+      (array
+        item.Checks
+        (or
+          proxy.Checks
+          (array)
+        )
+      )
+    )
+  as |checks|}}
+
+  {{#if @node}}
+    <Consul::ExternalSource
+      @item={{item.Service}}
+    />
+    <Consul::InstanceChecks
+      @type="service"
+      @items={{filter-by 'ServiceID' '' checks}}
+    />
+  {{else}}
+    {{#unless this.areAllExternalSourcesMatching}}
+      <Consul::ExternalSource
+        @item={{item.Service}}
+      />
+    {{/unless}}
+
+    <Consul::InstanceChecks
+      @type="service"
+      @items={{filter-by 'ServiceID' '' checks}}
+    />
+
+    {{#unless item.Node.Meta.synthetic-node}}
+      <Consul::InstanceChecks
+        @type="node"
+        @items={{reject-by 'ServiceID' '' checks}}
+        data-test-node-health-checks
+      />
+    {{/unless}}
+  {{/if}}
+{{#if proxy}}
+    <dl class="mesh">
+      <dt {{hds-tooltip "This service uses a proxy for the Consul service mesh" options=(detached-tooltip-options)}}></dt>
+      <dd data-test-mesh>
+        in service mesh with proxy
+      </dd>
+    </dl>
+{{/if}}
+{{#if (and (not @node) (not item.Node.Meta.synthetic-node))}}
+    <dl class="node">
+      <dt {{hds-tooltip "Node" options=(detached-tooltip-options)}}></dt>
+      <dd>
+        <a data-test-node-name href={{href-to 'dc.nodes.show' item.Node.Node}}>{{item.Node.Node}}</a>
+      </dd>
+    </dl>
+{{/if}}
+{{#if item.Service.Port}}
+    <dl class="address" data-test-address>
+      <dt {{hds-tooltip "IP Address and Port" options=(detached-tooltip-options)}}></dt>
+      <dd>
+        {{#if (not-eq item.Service.Address '')}}
+          {{format-ipaddr item.Service.Address}}:{{item.Service.Port}}
+        {{else}}
+          {{format-ipaddr item.Node.Address}}:{{item.Service.Port}}
+        {{/if}}
+      </dd>
+    </dl>
+{{else if item.Service.SocketPath}}
+    <dl class="socket" data-test-socket>
+      <dt {{hds-tooltip options=(detached-tooltip-options)}}>
+        Socket Path
+      </dt>
+      <dd>
+        {{item.Service.SocketPath}}
+      </dd>
+    </dl>
+{{/if}}
+    <TagList @item={{item.Service}} />
+
+  {{/let}}
+{{/let}}
+
+  </:details>
+</ListCollection>
+{{/let}}

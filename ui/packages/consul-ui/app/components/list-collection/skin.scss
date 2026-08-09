@@ -1,0 +1,20 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%list-collection > ul {
+  border-top: 1px solid;
+  border-color: var(--token-color-surface-interactive-active);
+}
+%list-collection-partial-button {
+  cursor: pointer;
+  background-color: var(--token-color-surface-strong);
+  color: var(--token-color-foreground-action);
+}
+%list-collection-partial-button::after {
+  @extend %with-chevron-up-mask, %as-pseudo;
+}
+%list-collection-partial-button.closed::after {
+  @extend %with-chevron-down-mask;
+}

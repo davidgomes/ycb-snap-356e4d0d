@@ -1,0 +1,32 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import Component from '@ember/component';
+import { computed } from '@ember/object';
+import { titleize } from 'ember-cli-string-helpers/helpers/titleize';
+import { humanize } from 'ember-cli-string-helpers/helpers/humanize';
+
+const normalizedGatewayLabels = {
+  'api-gateway': 'API Gateway',
+  'mesh-gateway': 'Mesh Gateway',
+  'ingress-gateway': 'Ingress Gateway',
+  'terminating-gateway': 'Terminating Gateway',
+};
+
+export default Component.extend({
+  tagName: '',
+  Name: computed('item.Kind', '_Name', {
+    get() {
+      if (this._Name !== undefined) {
+        return this._Name;
+      }
+      const name = normalizedGatewayLabels[this.item.Kind];
+      return name ? name : titleize(humanize(this.item.Kind));
+    },
+    set(_key, value) {
+      return this.set('_Name', value);
+    },
+  }),
+});

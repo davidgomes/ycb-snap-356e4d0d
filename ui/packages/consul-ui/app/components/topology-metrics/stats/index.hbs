@@ -1,0 +1,49 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#if (not @noMetricsReason)}}
+  <DataSource
+    @src={{uri
+      '/${partition}/${nspace}/${dc}/metrics/${endpoint}/${service}/${protocol}'
+      (hash
+        nspace=@nspace
+        partition=@partition
+        dc=@dc
+        endpoint=@endpoint
+        service=@service
+        protocol=(or @protocol '')
+      )
+    }}
+    @onchange={{action 'statsUpdate'}}
+    @onerror={{action (mut this.error) value="error"}}
+  />
+{{/if}}
+
+<div ...attributes class="topology-metrics-stats" data-test-topology-metrics-stats>
+  {{#if this.hasLoaded }}
+    {{#each this.stats as |stat|}}
+    <dl {{hds-tooltip
+      stat.desc
+      options=(detached-tooltip-options
+        allowHTML=true
+      )
+    }}>
+      <dt>
+        {{stat.value}}
+      </dt>
+      <dd>
+        {{stat.label}}
+      </dd>
+    </dl>
+    {{else}}
+      <span>No Metrics Available</span>
+    {{/each}}
+  {{else}}
+    <TopologyMetrics::Status
+      @noMetricsReason={{@noMetricsReason}}
+      @error={{this.error}}
+    />
+  {{/if}}
+</div>

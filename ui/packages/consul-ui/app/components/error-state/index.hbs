@@ -1,0 +1,96 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#if (not-eq @error.status "403")}}
+  <EmptyState
+    class={{concat "status-" @error.status}}
+    @login={{@login}}
+  >
+    <:header>
+      <h2>
+        {{or @error.message "Consul returned an error"}}
+      </h2>
+    </:header>
+    <:subheader>
+      {{#if @error.status}}
+        <h3 data-test-status={{@error.status}}>
+          Error {{@error.status}}
+        </h3>
+      {{/if}}
+    </:subheader>
+    <:body>
+      <p>
+        {{#if @error.detail}}
+          {{@error.detail}}
+        {{else}}
+          You may have visited a URL that is loading an unknown resource, so you can try going back to the root or try re-submitting your ACL Token/SecretID by going back to ACLs.
+        {{/if}}
+      </p>
+    </:body>
+    <:actions>
+      <li>
+        <Hds::Link::Standalone
+          data-test-home
+          @route='index'
+          @text='Go back'
+          @icon='chevron-left'
+          @iconPosition='trailing'
+          @size='small'
+        />
+      </li>
+      <li>
+        <Hds::Link::Standalone
+          data-test-home
+          @text='Read the documentation'
+          @href="{{env 'CONSUL_DOCS_URL'}}"
+          @iconPosition='trailing'
+          @icon='docs-link'
+          @size='small'
+        />
+      </li>
+    </:actions>
+  </EmptyState>
+{{else}}
+  <EmptyState
+    class={{concat "status-" @error.status}}
+    @login={{@login}}
+  >
+    <:header>
+      <h2 data-test-status={{@error.status}}>
+        You are not authorized
+      </h2>
+    </:header>
+    <:subheader>
+      <h3>
+        Error {{@error.status}}
+      </h3>
+    </:subheader>
+    <:body>
+      <p>
+        You must be granted permissions to view this data. Ask your administrator if you think you should have access.
+      </p>
+    </:body>
+    <:actions>
+      <li>
+        <Hds::Link::Standalone
+          @text='Read the documentation'
+          @href="{{env 'CONSUL_DOCS_URL'}}/acl"
+          @icon='docs-link'
+          @iconPosition='trailing'
+          @size='small'
+        />
+      </li>
+      <li>
+        <Hds::Link::Standalone
+          @text='Follow the guide'
+          @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/security-networking/production-acls"
+          @icon='learn-link'
+          @iconPosition='trailing'
+          @size='small'
+        />
+      </li>
+    </:actions>
+  </EmptyState>
+{{/if}}

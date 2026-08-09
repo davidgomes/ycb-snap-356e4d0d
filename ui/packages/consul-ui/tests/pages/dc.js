@@ -1,0 +1,17 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+export default function (visitable, clickable, attribute, collection) {
+  return {
+    visit: visitable('/:dc/'),
+    dcs: collection('[data-test-datacenter-picker]'),
+    showDatacenters: clickable('[data-test-datacenter-selected]'),
+    selectedDc: attribute('data-test-datacenter-selected', '[data-test-datacenter-selected]'),
+    selectedDatacenter: attribute(
+      'data-test-datacenter-selected',
+      '[data-test-datacenter-selected]'
+    ),
+  };
+}

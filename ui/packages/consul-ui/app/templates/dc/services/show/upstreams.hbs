@@ -1,0 +1,102 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader @src={{
+      uri '/${partition}/${nspace}/${dc}/gateways/for-service/${name}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        name=route.params.name
+      )
+  }}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+  <div class="tab-section">
+  {{#let
+
+    (hash
+      value=(or this.sortBy "Status:asc")
+      change=(action (mut this.sortBy) value="target.selected")
+    )
+
+    (hash
+      instance=(hash
+        value=(if this.instance (split this.instance ',') undefined)
+        change=(action (mut this.instance) value="target.selectedItems")
+      )
+      searchproperty=(hash
+        value=(if (not-eq this.searchproperty undefined)
+          (split this.searchproperty ',')
+          this.searchProperties
+        )
+        change=(action (mut this.searchproperty) value="target.selectedItems")
+        default=this.searchProperties
+      )
+    )
+
+    (or route.params.partition route.model.user.token.Partition 'default')
+    (or route.params.nspace route.model.user.token.Namespace 'default')
+    route.params.dc
+    loader.data
+
+  as |sort filters partition nspace dc items|}}
+  {{#if (gt items.length 0)}}
+      <input type="checkbox" id="toolbar-toggle" />
+      <Consul::Upstream::SearchBar
+        @search={{this.search}}
+        @onsearch={{action (mut this.search) value="target.value"}}
+
+        @sort={{sort}}
+
+        @filter={{filters}}
+        />
+      {{/if}}
+        {{t
+          "routes.dc.services.show.upstreams.intro"
+          htmlSafe=true
+        }}
+        <DataCollection
+          @type="service"
+          @sort={{sort.value}}
+          @filters={{filters}}
+          @search={{this.search}}
+          @items={{items}}
+        as |collection|>
+          <collection.Collection>
+            <Consul::Upstream::List
+              @items={{collection.items}}
+              @dc={{dc}}
+              @nspace={{nspace}}
+              @partition={{partition}}
+            >
+            </Consul::Upstream::List>
+          </collection.Collection>
+          <collection.Empty>
+            <EmptyState>
+              <:body>
+                {{t "routes.dc.services.show.upstreams.empty"
+                  items=items.length
+                  htmlSafe=true
+                }}
+              </:body>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+  {{/let}}
+  </div>
+    </:loaded>
+  </DataLoader>
+</Route>

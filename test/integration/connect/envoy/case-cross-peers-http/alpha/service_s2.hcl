@@ -1,0 +1,10 @@
+# Copyright IBM Corp. 2024, 2026
+# SPDX-License-Identifier: BUSL-1.1
+
+services {
+  name = "s2"
+  port = 8181
+  connect {
+    sidecar_service {}
+  }
+}

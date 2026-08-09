@@ -1,0 +1,57 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#if @item}}
+  {{#let (service/external-source @item) as |externalSource|}}
+  {{#if (and @withInfo (eq externalSource 'consul-api-gateway'))}}
+        <dl class="tooltip-panel">
+          <dt>
+            <span
+              data-test-external-source={{externalSource}}
+              class="consul-external-source consul-external-source--hds"
+              ...attributes
+            >
+              <Hds::Badge
+                @text={{if @label @label (concat "Registered via " (t (concat "common.brand." externalSource)))}}
+                @icon={{icon-mapping externalSource}}
+                @color="neutral"
+                @size="small"
+              />
+            </span>
+          </dt>
+          <dd>
+            <MenuPanel @position="left" @menu={{false}}>
+              <:header>
+                API Gateways manage north-south traffic from external services to services in the Datacenter. For more information, read our documentation.
+              </:header>
+              <:menu>
+                <li role="separator">
+                  About {{t (concat "common.brand." externalSource)}}
+                </li>
+                <li role="none" class="learn-link">
+                  <a tabindex="-1" role="menuitem" href={{concat (env 'CONSUL_DOCS_LEARN_URL')}} rel="noopener noreferrer" target="_blank">
+                    Learn guides
+                  </a>
+                </li>
+              </:menu>
+            </MenuPanel>
+          </dd>
+        </dl>
+  {{else if externalSource}}
+    <span
+      data-test-external-source={{externalSource}}
+      class="consul-external-source consul-external-source--hds"
+      ...attributes
+    >
+      <Hds::Badge
+        @text={{if @label @label (concat "Registered via " (t (concat "common.brand." externalSource)))}}
+        @icon={{icon-mapping externalSource}}
+        @color="neutral"
+        @size="small"
+      />
+    </span>
+  {{/if}}
+  {{/let}}
+{{/if}}

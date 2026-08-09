@@ -1,0 +1,66 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+:root {
+  --icon-loading: icon-loading-motion;
+}
+.prefers-reduced-motion {
+  --icon-loading: icon-loading;
+}
+@media (prefers-reduced-motion) {
+  :root {
+    --icon-loading: icon-loading;
+  }
+}
+
+%with-vault-100,
+%with-vault-300 {
+  --icon-name: icon-vault;
+  content: '';
+}
+%with-aws-100,
+%with-aws-300 {
+  --icon-name: icon-aws-color;
+  content: '';
+}
+%with-allow-100,
+%with-aws-100,
+%with-deny-100,
+%with-l7-100,
+%with-vault-100 {
+  --icon-size: icon-200; /* 12px */
+}
+%with-allow-500,
+%with-deny-500,
+%with-l7-500 {
+  --icon-size: icon-500; /* 20px */
+}
+%with-allow-300,
+%with-allow-500 {
+  --icon-name: icon-arrow-right;
+  --icon-color: var(--token-color-foreground-success-on-surface);
+}
+%with-deny-300,
+%with-deny-500 {
+  --icon-name: icon-skip;
+  --icon-color: var(--token-color-foreground-critical-on-surface);
+}
+%with-l7-300,
+%with-l7-500 {
+  --icon-name: icon-layers;
+}
+%with-allow-500,
+%with-deny-500,
+%with-l7-500 {
+  --icon-resolution: 0.5;
+}
+%with-allow-300,
+%with-allow-500,
+%with-deny-300,
+%with-deny-500,
+%with-l7-300,
+%with-l7-500 {
+  @extend %as-pseudo;
+}

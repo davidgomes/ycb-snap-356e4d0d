@@ -1,0 +1,40 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+/* old stuff */
+
+%menu-panel {
+  overflow: hidden;
+}
+%menu-panel-deprecated {
+  position: absolute;
+}
+%menu-panel-deprecated [type='checkbox'] {
+  display: none;
+}
+%menu-panel-deprecated {
+  transition: max-height 150ms;
+}
+%menu-panel-deprecated {
+  transition: min-height 150ms, max-height 150ms;
+  min-height: 0;
+}
+
+%menu-panel-deprecated > ul > li > *:not(div[role='menu']) {
+  position: relative;
+}
+%menu-panel-deprecated:not(.left) {
+  right: 0px !important;
+  left: auto !important;
+}
+%menu-panel-deprecated.left {
+  left: 0px;
+}
+%menu-panel-deprecated:not(.above) {
+  top: 28px;
+}
+%menu-panel-deprecated.above {
+  bottom: 42px;
+}

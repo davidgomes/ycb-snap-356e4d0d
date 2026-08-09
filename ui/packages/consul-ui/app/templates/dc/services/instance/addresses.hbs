@@ -1,0 +1,41 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+{{#let
+  (entries route.model.item.Service.TaggedAddresses)
+as |items|}}
+  <div class="tab-section">
+    {{#if (gt items.length 0)}}
+      <TabularCollection
+        data-test-addresses
+        class="consul-tagged-addresses"
+        @items={{items}}
+      >
+          <:header>
+            <th>Tag</th>
+            <th>Address</th>
+          </:header>
+          <:row as |taggedAddress index|>
+      {{#let (object-at 1 taggedAddress) as |address|}}
+            <td>
+              {{object-at 0 taggedAddress}}{{#if (and (eq address.Address route.model.item.Address) (eq address.Port route.model.item.Port))}}&nbsp;<em data-test-address-default>(default)</em>{{/if}}
+            </td>
+            <td data-test-address>
+              {{address.Address}}:{{address.Port}}
+            </td>
+      {{/let}}
+          </:row>
+      </TabularCollection>
+    {{else}}
+      <p>
+        There are no additional addresses.
+      </p>
+    {{/if}}
+  </div>
+{{/let}}
+</Route>

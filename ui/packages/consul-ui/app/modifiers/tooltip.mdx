@@ -1,0 +1,52 @@
+# tooltip
+
+Consul UI uses the HDS `{{hds-tooltip}}` modifier for tooltip behavior. The
+most common usage will be something like the below:
+
+```hbs preview-template
+<span
+  {{hds-tooltip "Tooltip message"}}
+>
+  Hover over me
+</span>
+```
+
+A `tabindex=0` is automatically added to the element that triggers the tooltip
+if it doesn't have one already to make sure the tooltip is in the natural
+tabbing order of the document.
+
+If you specify and empty string as a content, then the tooltip will not show,
+you can use this to conditionally disable/enable tooltips. It additionally
+means empty tooltips can not been added by accident.
+
+```hbs preview-template
+<span
+  {{hds-tooltip (if false 'Never show this' '')}}
+>
+  Hover over me
+</span>
+```
+
+An additional options hash can be passed into the tooltip the contents of
+which are passed along to `tippy.js` [so all of the `tippy.js`
+props](https://atomiks.github.io/tippyjs/v5/all-props/) can be used to control
+tooltips, including `tippy.js` plugins.
+
+```hbs preview-template
+
+
+<span
+  {{hds-tooltip "Tooltip message" options=(hash
+    showOnCreate=true
+    hideOnClick=false
+    placement="bottom"
+  )}}
+>
+  No need to hover over me
+</span>
+```
+
+An options hash is forwarded to the underlying tooltip implementation, which in
+turn forwards supported settings to `tippy.js`.
+
+We also have a Tooltip component but this modifier is preferred over that.

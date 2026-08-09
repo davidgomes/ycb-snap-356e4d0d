@@ -1,0 +1,212 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader
+    @src={{
+      uri '/${partition}/${nspace}/${dc}/datacenter'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+      )
+    }}>
+
+    <:error as |loader|>
+      <ErrorState
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:disconnected as |after loader|>
+      {{#if (eq loader.error.status "404")}}
+        <Hds::Toast
+          @color='warning'
+          {{notification
+            sticky=true
+          }} as |T|>
+          <T.Title>Warning!</T.Title>
+          <T.Description>This service has been deregistered and no longer exists in the catalog.</T.Description>
+        </Hds::Toast>
+      {{else if (eq loader.error.status "403")}}
+        <Hds::Toast
+          @color='critical'
+          {{notification
+            sticky=true
+          }} as |T|>
+          <T.Title>Error!</T.Title>
+          <T.Description>You no longer have access to this service.</T.Description>
+        </Hds::Toast>
+      {{else}}
+        <Hds::Toast
+          @color='warning'
+          {{notification
+            sticky=true
+          }} as |T|>
+          <T.Title>Warning!</T.Title>
+          <T.Description>An error was returned whilst loading this data, refresh to try again.</T.Description>
+        </Hds::Toast>
+      {{/if}}
+    </:disconnected>
+
+    <:loaded as |loader|>
+{{#let
+  loader.data
+as |item|}}
+      <div class="tab-section">
+
+          <Hds::Card::Container
+            @hasBorder={{true}}
+            @level="base"
+            class="server-failure-tolerance"
+            aria-labelledby="server-fault-tolerance-title"
+            role="region"
+            data-test-server-info
+          >
+            <header class="server-failure-tolerance__header" aria-label="Tolerance">
+              <h2 id="server-fault-tolerance-title" class="hds-typography-display-300 hds-font-weight-semibold">
+                {{compute (fn route.t 'tolerance.header')}}
+              </h2>
+              <Hds::Link::Standalone
+                @icon='docs-link'
+                @iconPosition='trailing'
+                @text={{compute (fn route.t 'tolerance.link-text')}}
+                @href='{{concat (env 'CONSUL_DOCS_URL') (compute (fn route.t 'tolerance.link'))}}'
+                aria-label="Learn how to improve fault tolerance"
+              />
+            </header>
+            <hr class="server-failure-tolerance__divider" aria-hidden="true" />
+            <section class="server-failure-tolerance__content" aria-label="Immediate Fault Tolerance">
+              <h3 class="hds-typography-display-200 hds-font-weight-semibold">
+                {{compute (fn route.t 'tolerance.immediate.header')}}
+              </h3>
+              <p class="hds-typography-body-100 hds-font-weight-regular">
+                {{compute (fn route.t 'tolerance.immediate.body')}}
+              </p>
+              <div class="server-failure-tolerance__value" aria-live="polite">
+                <span class="server-failure-tolerance__badge-count">
+                  <Hds::BadgeCount @text={{item.FailureTolerance}} @size="large" @type="filled" @color="neutral" />
+                </span>
+              </div>
+            </section>
+
+              {{#if (can 'read zones')}}
+            <section
+              class={{class-map
+                (array 'optimistic-tolerance')
+              }}
+            >
+              <header aria-label="Optimistic Fault Tolerance">
+                <h3>
+                  {{compute (fn route.t 'tolerance.optimistic.header')}}
+                  <span
+                    {{hds-tooltip 'With > 30 seconds between server failures, Consul can restore the Immediate Fault Tolerance by replacing failed active voters with healthy back-up voters when using redundancy zones.' options=(detached-tooltip-options)}}
+                  >
+                  </span>
+                </h3>
+              </header>
+              <p>
+                {{compute (fn route.t 'tolerance.optimistic.body')}}
+              </p>
+              <div class="server-failure-tolerance__status-badge">
+                <Hds::Badge
+                  @text={{item.OptimisticFailureTolerance}}
+                  @icon={{if (eq item.OptimisticFailureTolerance 0) "alert-circle" "check"}}
+                  @color={{if (eq item.OptimisticFailureTolerance 0) "warning" "success"}}
+                  @type="filled"
+                  @size="small"
+                />
+              </div>
+
+            </section>
+              {{/if}}
+          </Hds::Card::Container>
+
+    {{#if (gt item.RedundancyZones.length 0)}}
+          <section
+            class={{class-map
+              'redundancy-zones'
+            }}
+          >
+            <header aria-label="Redundancy Zones">
+              <h2>
+                {{pluralize (t 'common.consul.redundancyzone')}}
+              </h2>
+            </header>
+
+      {{#each item.RedundancyZones as |item|}}
+        {{#if (gt item.Servers.length 0) }}
+              <section>
+                <header aria-label="Redundancy Zone {{item.Name}}">
+                  <h3>
+                    {{item.Name}}
+                  </h3>
+                  <dl
+                    class={{class-map
+                      (array 'warning' (eq item.FailureTolerance 0))
+                    }}
+                  >
+                      <dt
+                      >{{t 'common.consul.failuretolerance'}}</dt>
+                      <dd>{{item.FailureTolerance}}</dd>
+                  </dl>
+                </header>
+                <Consul::Server::List
+                  @items={{item.Servers}}
+                />
+              </section>
+        {{/if}}
+      {{/each}}
+
+      {{#if (gt item.Default.Servers.length 0)}}
+              <section>
+                <header aria-label="Unassigned Servers">
+                  <h3>
+                    {{compute (fn route.t 'unassigned')}}
+                  </h3>
+                </header>
+                <Consul::Server::List
+                  @items={{item.Default.Servers}}
+                />
+              </section>
+      {{/if}}
+
+          </section>
+    {{else}}
+          <section>
+            <header aria-label="Default Servers">
+              <h2>
+                {{compute (fn route.t 'servers')}}
+              </h2>
+            </header>
+            <Consul::Server::List
+              @items={{item.Default.Servers}}
+            />
+          </section>
+    {{/if}}
+
+    {{#if (gt item.ReadReplicas.length 0)}}
+          <section>
+            <header aria-label="Read Replicas">
+              <h2>
+                {{pluralize (t 'common.consul.readreplica')}}
+              </h2>
+            </header>
+
+            <Consul::Server::List
+              @items={{item.ReadReplicas}}
+            />
+          </section>
+    {{/if}}
+
+      </div>
+{{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>
+

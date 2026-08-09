@@ -1,0 +1,70 @@
+{
+  "nonce": "00000001",
+  "resources": [
+    {
+      "@type": "type.googleapis.com/envoy.config.route.v3.RouteConfiguration",
+      "name": "db",
+      "virtualHosts": [
+        {
+          "domains": [
+            "*"
+          ],
+          "name": "db",
+          "routes": [
+            {
+              "match": {
+                "prefix": "/"
+              },
+              "route": {
+                "hashPolicy": [
+                  {
+                    "cookie": {
+                      "name": "chocolate-chip"
+                    },
+                    "terminal": true
+                  },
+                  {
+                    "cookie": {
+                      "name": "chocolate-chip",
+                      "ttl": "0s"
+                    }
+                  },
+                  {
+                    "header": {
+                      "headerName": "x-user-id"
+                    }
+                  },
+                  {
+                    "queryParameter": {
+                      "name": "my-pretty-param"
+                    }
+                  },
+                  {
+                    "connectionProperties": {
+                      "sourceIp": true
+                    },
+                    "terminal": true
+                  }
+                ],
+                "weightedClusters": {
+                  "clusters": [
+                    {
+                      "name": "something-else.default.dc1.internal.11111111-2222-3333-4444-555555555555.consul",
+                      "weight": 9550
+                    },
+                    {
+                      "name": "db.default.dc1.internal.11111111-2222-3333-4444-555555555555.consul",
+                      "weight": 450
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "typeUrl": "type.googleapis.com/envoy.config.route.v3.RouteConfiguration",
+  "versionInfo": "00000001"
+}

@@ -1,0 +1,11 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#if @peering.State}}
+  <div class="peerings-badge {{lowercase @peering.State}}" {{hds-tooltip this.tooltip options=(detached-tooltip-options)}}>
+    <Peerings::Badge::Icon @state="{{@peering.State}}" />
+    <span class="peerings-badge__text">{{capitalize (lowercase @peering.State)}}</span>
+  </div>
+{{/if}}

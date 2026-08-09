@@ -1,0 +1,45 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<AppView>
+  <:header>
+    <h1>
+      Tokens
+    </h1>
+  </:header>
+  <:content>
+    <EmptyState data-test-acls-disabled>
+      <:header>
+        <h2>Welcome to ACLs</h2>
+      </:header>
+      <:body>
+        <p>
+          ACLs are not enabled in this Consul cluster. We strongly encourage the use of ACLs in production environments for the best security practices.
+        </p>
+      </:body>
+      <:actions>
+        <li>
+          <Hds::Link::Standalone
+            @text='Read the documentation'
+            @href="{{env 'CONSUL_DOCS_URL'}}/acl"
+            @icon='docs-link'
+            @iconPosition='trailing'
+            @size='small'
+          />
+        </li>
+        <li>
+          <Hds::Link::Standalone
+            @text='Follow the guide'
+            @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/security-networking/production-acls"
+            @icon='learn-link'
+            @iconPosition='trailing'
+            @size='small'
+          />
+        </li>
+      </:actions>
+    </EmptyState>
+  </:content>
+</AppView>
+

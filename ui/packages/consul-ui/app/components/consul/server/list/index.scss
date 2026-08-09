@@ -1,0 +1,13 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.consul-server-list ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(215px, 25%));
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}

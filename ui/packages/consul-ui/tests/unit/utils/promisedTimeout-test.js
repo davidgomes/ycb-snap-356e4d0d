@@ -1,0 +1,26 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import { module, skip, test } from 'qunit';
+import promisedTimeout from 'consul-ui/utils/promisedTimeout';
+
+module('Unit | Utils | promisedTimeout', function () {
+  test('it calls setTimeout with the correct milliseconds', function (assert) {
+    const expected = 1000;
+    const P = function (cb) {
+      cb(function (milliseconds) {
+        assert.strictEqual(milliseconds, expected);
+      });
+    };
+    const setTimeoutDouble = function (cb, milliseconds) {
+      assert.strictEqual(milliseconds, expected);
+      cb();
+      return 1;
+    };
+    const timeout = promisedTimeout(P, setTimeoutDouble);
+    timeout(expected, function () {});
+  });
+  skip('it still clears the interval if there is no callback');
+});

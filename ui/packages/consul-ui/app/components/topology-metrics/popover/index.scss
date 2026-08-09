@@ -1,0 +1,41 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.topology-metrics-popover {
+  > button {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background-color: var(--token-color-surface-primary);
+    padding: 1px 1px;
+    &:hover {
+      cursor: pointer;
+    }
+    &:active,
+    &:focus {
+      outline: none;
+    }
+    &:disabled {
+      cursor: default;
+    }
+  }
+  &.deny .informed-action header::before {
+    display: none;
+  }
+  &.deny > button::before,
+  &.deny .tippy-arrow::after {
+    @extend %with-cancel-square-fill-mask, %as-pseudo;
+    --icon-color: var(--token-color-foreground-critical);
+  }
+  &.l7 > button::before,
+  &.l7 .tippy-arrow::after {
+    @extend %with-layers-mask, %as-pseudo;
+    --icon-color: var(--token-color-palette-neutral-300);
+  }
+  &.not-defined > button::before,
+  &.not-defined .tippy-arrow::after {
+    @extend %with-alert-triangle-mask, %as-pseudo;
+    --icon-color: var(--token-color-vault-brand);
+  }
+}

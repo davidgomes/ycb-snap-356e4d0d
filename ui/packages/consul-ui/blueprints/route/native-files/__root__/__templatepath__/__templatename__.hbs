@@ -1,0 +1,17 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+
+  <route.Title @title="<%= classifiedModuleName %>" />
+
+  <Outlet
+    @name={{this.routeName}}
+  as |o|>
+    {{outlet}}
+  </Outlet>
+</Route>

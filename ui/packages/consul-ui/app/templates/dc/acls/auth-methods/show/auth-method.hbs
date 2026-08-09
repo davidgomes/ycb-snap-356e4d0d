@@ -1,0 +1,12 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <div class="tab-section">
+    <Consul::AuthMethod::View @item={{route.model.item}} />
+  </div>
+</Route>

@@ -1,0 +1,15 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+/*TODO: This is a different style of modal dialog */
+/* and should probably be part of that, offering different styles*/
+@import './skin';
+@import './layout';
+%auth-modal footer button {
+  @extend %anchor;
+}
+#login-toggle + div {
+  @extend %auth-modal;
+}

@@ -1,0 +1,23 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import { module, skip, test } from 'qunit';
+import { setupRenderingTest } from 'ember-qunit';
+import { render } from '@ember/test-helpers';
+import hbs from 'htmlbars-inline-precompile';
+
+module('Integration | Helper | slugify', function (hooks) {
+  setupRenderingTest(hooks);
+
+  // Replace this with your real tests.
+  test('it renders', async function (assert) {
+    this.set('inputValue', 'Hi There');
+
+    await render(hbs`{{slugify this.inputValue}}`);
+
+    assert.strictEqual(this.element.textContent.trim(), 'hi-there');
+  });
+  skip("it copes with more values such as ' etc");
+});

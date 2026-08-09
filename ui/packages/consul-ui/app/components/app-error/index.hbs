@@ -1,0 +1,18 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<AppView>
+  <:header>
+    <h1>
+      Error {{@error.status}}
+    </h1>
+  </:header>
+  <:content>
+    <ErrorState
+      @error={{@error}}
+      @login={{if (eq @error.status "403") @login}}
+    />
+  </:content>
+</AppView>

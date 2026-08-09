@@ -1,0 +1,36 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import Component from '@ember/component';
+
+export default Component.extend({
+  tagName: '',
+  shouldShowPermissionForm: false,
+
+  openModal() {
+    this.modal?.open();
+  },
+
+  actions: {
+    createNewLabel: function (template, term) {
+      return template.replace(/{{term}}/g, term);
+    },
+    isUnique: function (items, term) {
+      return !items.find((item) => item.Name === term);
+    },
+    add: function (name, changeset, value) {
+      if (!(changeset.get(name) || []).includes(value)) {
+        changeset.pushObject(name, value);
+        changeset.validate();
+      }
+    },
+    delete: function (name, changeset, value) {
+      if ((changeset.get(name) || []).includes(value)) {
+        changeset.removeObject(name, value);
+        changeset.validate();
+      }
+    },
+  },
+});

@@ -1,0 +1,97 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+/* decor */
+%button,
+%internal-button {
+  @extend %user-select-none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+%button:disabled,
+%internal-button:disabled {
+  cursor: default;
+  box-shadow: none;
+}
+%secondary-button,
+%dangerous-button {
+  @extend %button;
+  border-width: 1px;
+  border-radius: var(--decor-radius-100);
+  box-shadow: var(--token-elevation-high-box-shadow);
+}
+/**/
+%secondary-button:hover:not(:disabled):not(:active),
+%secondary-button:focus {
+  @extend %frame-gray-300;
+}
+%secondary-button {
+  @extend %frame-gray-400;
+}
+%secondary-button:disabled {
+  color: var(--token-color-foreground-faint);
+}
+%secondary-button:active {
+  @extend %frame-gray-700;
+  background-color: var(--token-color-surface-interactive-active);
+  color: var(--token-color-foreground-primary);
+  border-color: var(--token-color-foreground-faint);
+}
+/**/
+%dangerous-button {
+  @extend %frame-red-300;
+}
+%dangerous-button:hover:not(:disabled):not(:active),
+%dangerous-button:focus {
+  @extend %frame-red-700;
+}
+%dangerous-button:disabled {
+  @extend %frame-red-600;
+}
+%dangerous-button:hover:active {
+  @extend %frame-red-900;
+}
+
+%internal-button {
+  color: var(--token-color-foreground-strong);
+  background-color: var(--token-color-surface-primary);
+}
+%internal-button-dangerous {
+  @extend %frame-red-300;
+}
+%internal-button-dangerous-intent {
+  @extend %frame-red-700;
+}
+%internal-button-intent {
+  background-color: var(--token-color-surface-strong);
+}
+%internal-button:focus,
+%internal-button:hover {
+  @extend %internal-button-intent;
+}
+%internal-button-dangerous:focus,
+%internal-button-dangerous:hover {
+  @extend %internal-button-dangerous-intent;
+}
+
+%split-button span::after {
+  @extend %as-pseudo;
+  position: absolute;
+  width: 1px;
+  top: 0;
+  height: 100%;
+  margin-left: 8px;
+  background-color: var(--token-color-palette-neutral-300);
+}
+%sort-button::before {
+  @extend %with-sort-mask, %as-pseudo;
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+%sort-button::after {
+  top: 0 !important;
+}

@@ -1,0 +1,158 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader
+    @src={{
+      uri '/${partition}/${nspace}/${dc}/namespaces'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+      )}}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+  {{#let
+
+    (hash
+      value=(or this.sortBy "Name:asc")
+      change=(action (mut this.sortBy) value="target.selected")
+    )
+
+    (hash
+      searchproperty=(hash
+        value=(if (not-eq this.searchproperty undefined)
+          (split this.searchproperty ',')
+          this.searchProperties
+        )
+        change=(action (mut this.searchproperty) value="target.selectedItems")
+        default=this.searchProperties
+      )
+    )
+
+    loader.data
+
+  as |sort filters items|}}
+
+    <AppView>
+      <:header>
+        <h1>
+          <route.Title @title="Namespaces" />
+        </h1>
+      </:header>
+      <:actions>
+  {{#if (can "create nspaces")}}
+    <Hds::Button
+      @text='Create'
+      @route='dc.nspaces.create'
+      data-test-create
+    />
+  {{/if}}
+      </:actions>
+      <:toolbar>
+      {{#if (gt items.length 0)}}
+        <Consul::Nspace::SearchBar
+          @search={{this.search}}
+          @onsearch={{action (mut this.search) value="target.value"}}
+
+          @sort={{sort}}
+
+          @filter={{filters}}
+        />
+      {{/if}}
+      </:toolbar>
+      <:content>
+        {{#let (refresh-route) as |refreshRoute|}}
+        <DataWriter
+          @sink={{uri '/${partition}/${dc}/${nspace}/nspace/'
+            (hash
+              partition=route.params.partition
+              nspace=route.params.nspace
+              dc=route.params.dc
+            )
+          }}
+          @type="nspace"
+          @label="Namespace"
+          @ondelete={{refreshRoute}}>
+          <:removed as |after|>
+            <Consul::Nspace::Notifications
+              {{notification
+                after=(action after)
+              }}
+              @type="remove"
+            />
+          </:removed>
+          <:content as |writer|>
+        <DataCollection
+          @type="nspace"
+          @sort={{sort.value}}
+          @filters={{filters}}
+          @search={{this.search}}
+          @items={{items}}
+        as |collection|>
+          <collection.Collection>
+            <Consul::Nspace::List
+              @items={{collection.items}}
+              @ondelete={{writer.delete}}
+            />
+          </collection.Collection>
+          <collection.Empty>
+            <EmptyState
+              @login={{route.model.app.login.open}}
+            >
+              <:header>
+                <h2>
+                  {{t 'routes.dc.namespaces.index.empty.header'
+                    items=items.length}}
+                </h2>
+              </:header>
+              <:body>
+                <p>
+                  {{t 'routes.dc.namespaces.index.empty.body'
+                    items=items.length
+                    canUseACLs=(can 'use acls')}}
+                </p>
+              </:body>
+              <:actions>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Documentation on namespaces'
+                    @href="{{env 'CONSUL_DOCS_URL'}}/commands/namespace"
+                    @icon='docs-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Read the guide'
+                    @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/namespaces/secure-namespaces"
+                    @icon='learn-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+              </:actions>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+    </:content>
+  </DataWriter>
+  {{/let}}
+      </:content>
+    </AppView>
+  {{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

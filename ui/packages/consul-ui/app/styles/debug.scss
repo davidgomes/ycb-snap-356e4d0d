@@ -1,0 +1,275 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import 'prism-coldark-dark';
+
+// temporary component debugging setup
+@import 'consul-ui/components/badge/debug';
+@import 'consul-ui/components/panel/debug';
+@import 'consul-ui/components/tile/debug';
+@import 'consul-ui/components/csv-list/debug';
+@import 'consul-ui/components/horizontal-kv-list/debug';
+@import 'consul-ui/components/icon-definition/debug';
+@import 'consul-ui/components/inline-alert/debug';
+@import 'consul-ui/components/definition-table/debug';
+
+%debug-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+%debug-grid li {
+  margin-right: 20px;
+  margin-bottom: 20px;
+}
+%debug-grid figure {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 140px;
+}
+%debug-grid figcaption {
+  @extend %body-100-regular;
+  text-align: center;
+}
+[id^='docfy-demo-preview-color'] ul,
+[id^='docfy-demo-preview-typography'] ul,
+[id^='docfy-demo-preview-icons'] ul {
+  @extend %debug-grid;
+}
+
+[id^='docfy-demo-preview-typography'] figure,
+[id^='docfy-demo-preview-icons'] figure {
+  border: var(--decor-border-100);
+  border-color: var(--token-color-palette-neutral-300);
+  height: 80px;
+}
+
+[id^='docfy-demo-preview-icons'] figure::before {
+  position: relative;
+  top: 20px;
+}
+[id^='docfy-demo-preview-color'] figure {
+  height: 40px;
+}
+#docfy-demo-preview-color0 {
+  background-color: var(--token-color-surface-primary);
+}
+#docfy-demo-preview-color1 {
+  background-color: var(--token-color-hashicorp-brand);
+}
+
+[id^='docfy-demo-preview-typography'] {
+  .debug-h000,
+  .debug-h100 {
+    @extend %display-500-bold;
+  }
+  .debug-h200 {
+    @extend %display-400-semibold;
+  }
+  .debug-h300 {
+    @extend %display-300-semibold;
+  }
+  .debug-h400 {
+    @extend %display-100-semibold;
+  }
+  .debug-h500 {
+    @extend %display-100-medium;
+  }
+  .debug-h600 {
+    @extend %display-100-medium;
+  }
+  .debug-p {
+    @extend %body-200-regular;
+  }
+  .debug-p1 {
+    @extend %body-200-regular;
+  }
+  .debug-p2 {
+    @extend %body-100-regular;
+  }
+  .debug-p3 {
+    @extend %body-100-regular;
+  }
+}
+
+html.is-debug body > .brand-loader {
+  display: none !important;
+}
+html.is-debug [class*='partition-'] {
+  display: block !important;
+}
+html:not(.with-data-source) .data-source-debug {
+  display: none;
+}
+html:not(.with-data-source) .data-source-debug {
+  display: none;
+}
+%debug-box {
+  color: red;
+  background-color: rgb(255 255 255 / 70%);
+  position: absolute;
+  /* hi */
+  z-index: 100000;
+}
+html.with-href-to [href^='console://']::before
+{
+  @extend %body-100-regular;
+  @extend %debug-box;
+  content: attr(href);
+  display: inline;
+}
+html.with-route-announcer .route-title {
+  @extend %unvisually-hidden;
+}
+.data-source-debug {
+  @extend %debug-box;
+}
+.data-source-debug input:checked + pre code::after {
+  content: attr(data-json);
+  display: block;
+}
+.data-source-debug input {
+  display: none;
+}
+.docs {
+  & {
+    background-color: var(--token-color-surface-primary);
+  }
+  .tabular-collection,
+  .list-collection {
+    height: 300px !important;
+  }
+  [role='banner'] nav:first-of-type {
+    & {
+      padding-top: 0 !important;
+      height: calc(100vh - var(--chrome-height, 47px));
+    }
+    ul {
+      margin-bottom: 100px;
+      padding-top: 0 !important;
+    }
+    li.provider-components a::before,
+    li.consul-components a::before,
+    li.components a::before {
+      @extend %with-logo-glimmer-color-icon, %as-pseudo;
+      margin-right: 5px;
+    }
+    li.consul-components.css-component a::before,
+    li.components.css-component a::before {
+      @extend %with-logo-glimmer-color-icon, %as-pseudo;
+    }
+    li.provider-components.ember-component a::before,
+    li.consul-components.ember-component a::before,
+    li.components.ember-component a::before {
+      @extend %with-logo-ember-circle-color-icon, %as-pseudo;
+    }
+  }
+  main {
+    & {
+      margin-bottom: 2rem;
+    }
+    > ol,
+    > ul {
+      list-style-position: outside;
+      margin-bottom: 1rem;
+      margin-left: 2rem;
+    }
+    > ul {
+      list-style-type: disc;
+    }
+    > h1,
+    > h2,
+    > h3,
+    > h4 {
+      margin-bottom: 1em;
+    }
+    > h1 {
+      padding-top: 20px;
+      @extend %display-500-bold;
+    }
+    > h2 {
+      @extend %display-400-semibold;
+    }
+    > h3 {
+      @extend %display-300-semibold;
+    }
+    > h4 {
+      @extend %display-100-semibold;
+    }
+    > p {
+      @extend %body-200-regular;
+    }
+    > table {
+      margin-bottom: 3em;
+    }
+    > table td {
+      font-weight: var(--token-typography-font-weight-regular) !important;
+      cursor: default !important;
+    }
+    > table td code {
+      @extend %inline-code;
+      vertical-align: bottom;
+    }
+    > table tr:hover {
+      box-shadow: none;
+    }
+    > ol code,
+    > ul code {
+      @extend %inline-code;
+    }
+  }
+  .docfy-demo {
+    & {
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    &__example {
+      & {
+        border-top: 1px solid;
+        border-left: 1px solid;
+        border-right: 1px solid;
+        border-color: var(--token-color-surface-interactive-active);
+        padding: 1rem;
+        margin-bottom: 0;
+      }
+      ol,
+      ul {
+        margin-bottom: 0;
+      }
+      figure {
+        margin-bottom: 0.5rem;
+      }
+      figcaption {
+        margin-bottom: 0.5rem;
+        color: var(--token-color-foreground-faint);
+        font-style: italic;
+      }
+      figcaption code {
+        @extend %inline-code;
+      }
+      figure > [type='text'] {
+        border: 1px solid var(--token-color-hashicorp-brand);
+        width: 100%;
+        padding: 0.5rem;
+      }
+      figure > select {
+        border: 1px solid var(--token-color-hashicorp-brand);
+        padding: 0.5rem;
+      }
+    }
+    // &__snippets__tabs__button {
+    //   display: none;
+    // }
+    &__snippet {
+      pre {
+        margin: 0 !important;
+        border-bottom-left-radius: 5px;
+        border-bottom-right-radius: 5px;
+      }
+    }
+  }
+}

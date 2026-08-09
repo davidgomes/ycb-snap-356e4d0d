@@ -1,0 +1,15 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import validations from 'consul-ui/validations/policy';
+import builderFactory from 'consul-ui/utils/form/builder';
+const builder = builderFactory();
+export default function (container, name = 'policy', v = validations, form = builder) {
+  return form(name, {
+    Datacenters: {
+      type: 'array',
+    },
+  }).setValidators(v);
+}

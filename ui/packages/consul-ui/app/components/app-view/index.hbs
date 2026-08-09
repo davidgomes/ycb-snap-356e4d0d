@@ -1,0 +1,44 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<div
+  class="app-view"
+  ...attributes
+>
+  {{yield}}
+  <header>
+      <div>
+          <div>
+              <nav class="app-view-breadcrumbs" aria-label="Breadcrumb" data-test-breadcrumbs>
+                {{#if (if (not-eq @showBreadcrumb undefined) @showBreadcrumb (has-block 'breadcrumbs'))}}
+                  {{document-attrs class="with-breadcrumbs"}}
+                  {{yield to='breadcrumbs'}}
+                {{/if}}
+              </nav>
+              <div class="title">
+                <div class="title-left-container">
+                  {{yield to='header'}}
+                </div>
+                <div class="actions">
+                  <PortalTarget @name="app-view-actions" />
+                  {{#if (has-block 'actions')}}
+                    {{yield to='actions'}}
+                  {{/if}}
+                </div>
+              </div>
+              {{#if (has-block 'nav')}}
+                {{yield to='nav'}}
+              {{/if}}
+          </div>
+      </div>
+      {{#if (has-block 'toolbar')}}
+        <input type="checkbox" id="toolbar-toggle" />
+        {{yield to='toolbar'}}
+      {{/if}}
+  </header>
+  <div>
+    {{yield to='content'}}
+  </div>
+</div>

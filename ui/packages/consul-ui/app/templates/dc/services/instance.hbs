@@ -1,0 +1,214 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route @name={{this.routeName}} as |route|>
+  <DataLoader
+    @src={{uri
+      '/${partition}/${nspace}/${dc}/service-instance/${id}/${node}/${name}/${peer}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        id=route.params.id
+        node=route.params.node
+        name=route.params.name
+        peer=route.params.peer
+      )
+    }}
+  >
+
+    <:error as |loader|>
+      <AppError @error={{loader.error}} @login={{route.model.app.login.open}} />
+    </:error>
+
+    <:disconnected as |loader after|>
+      {{#if (eq loader.error.status '404')}}
+        <Hds::Toast
+          @color='warning'
+          {{notification sticky=true}}
+          as |T|>
+          <T.Title>Warning!</T.Title>
+          <T.Description>
+            This service has been deregistered and no longer exists in the catalog.
+          </T.Description>
+        </Hds::Toast>
+      {{else if (eq loader.error.status '403')}}
+        <Hds::Toast
+          @color='critical'
+          {{notification sticky=true}}
+          as |T|>
+          <T.Title>Error!</T.Title>
+          <T.Description>
+            You no longer have access to this service.
+          </T.Description>
+        </Hds::Toast>
+      {{else}}
+        <Hds::Toast
+          @color='critical'
+          {{notification sticky=true}}
+          as |T|>
+          <T.Title>Warning!</T.Title>
+          <T.Description>
+            An error was returned whilst loading this data, refresh to try again.
+          </T.Description>
+        </Hds::Toast>
+      {{/if}}
+    </:disconnected>
+
+    <:loaded as |loader|>
+      {{#let loader.data as |item|}}
+        {{#if item.IsOrigin}}
+          <DataSource
+            @src={{uri
+              '/${partition}/${nspace}/${dc}/proxy-instance/${id}/${node}/${name}'
+              (hash
+                partition=route.params.partition
+                nspace=route.params.nspace
+                dc=route.params.dc
+                id=route.params.id
+                node=route.params.node
+                name=route.params.name
+              )
+            }}
+            @onchange={{action (mut this.meta) value='data'}}
+            as |meta|
+          >
+            {{! We only really need meta to get the correct ServiceID }}
+            {{! but we may as well use the NodeName and ServiceName }}
+            {{! from meta also, but they should be the same as the instance }}
+            {{! so if we can ever get ServiceID from elsewhere we could save }}
+            {{! a HTTP request/long poll here }}
+            {{#if meta.data.ServiceID}}
+              {{! if we have a proxy then get the additional instance information }}
+              {{! for the proxy itself so if the service is called `backend` }}
+              {{! its likely to have a proxy service called `backend-sidecar-proxy` }}
+              {{! and this second request get the info for that instance and saves }}
+              {{! it into the `proxy` variable }}
+              <DataSource
+                @src={{uri
+                  '/${partition}/${nspace}/${dc}/service-instance/${id}/${node}/${name}/${peer}'
+                  (hash
+                    partition=route.params.partition
+                    nspace=route.params.nspace
+                    dc=route.params.dc
+                    id=meta.data.ServiceID
+                    node=meta.data.NodeName
+                    name=meta.data.ServiceName
+                    peer=route.params.peer
+                  )
+                }}
+                @onchange={{action (mut this.proxy) value='data'}}
+              />
+            {{/if}}
+          </DataSource>
+        {{/if}}
+        <AppView>
+          <:breadcrumbs>
+            <Hds::Breadcrumb>
+              <Breadcrumbs::BackLink @text="All Services" @route="dc.services" @model={{route.params.dc}} @params={{hash peer=undefined}} />
+              <Hds::Breadcrumb::Item @text={{concat "Service (" item.Service.Service ")"}} @route="dc.services.show" data-test-back />
+            </Hds::Breadcrumb>
+          </:breadcrumbs>
+          <:header>
+            <h1>
+              <route.Title @title={{item.Service.ID}} />
+            </h1>
+            <Consul::ExternalSource @item={{item}} @withInfo={{true}} />
+            <Consul::Kind @item={{item}} @withInfo={{true}} />
+            {{! TODO: Looks like we can get this straight from item.Proxy.Mode }}
+            {{! the less we need `proxy` and `meta` the better }}
+            {{#if (eq this.meta.ServiceProxy.Mode 'transparent')}}
+              <Consul::TransparentProxy />
+            {{/if}}
+          </:header>
+          <:nav>
+            <dl>
+              <dt>Service Name</dt>
+              <dd><a
+                  href='{{href-to "dc.services.show" item.Service.Service}}'
+                >{{item.Service.Service}}</a></dd>
+            </dl>
+            {{#unless item.Node.Meta.synthetic-node}}
+              <dl>
+                <dt>Node Name</dt>
+                <dd><a
+                    data-test-service-instance-node-name
+                    href='{{href-to "dc.nodes.show" item.Node.Node}}'
+                  >{{item.Node.Node}}</a></dd>
+              </dl>
+            {{/unless}}
+            {{#if item.Service.PeerName}}
+              <dl>
+                <dt>Peer Name</dt>
+                <dd><a
+                    data-test-service-instance-peer-name
+                    href={{href-to
+                      'dc.peers.show'
+                      item.Service.PeerName
+                      params=(hash peer=undefined)
+                    }}
+                  >{{item.Service.PeerName}}</a></dd>
+              </dl>
+            {{/if}}
+          </:nav>
+          <:actions>
+            {{#let (or item.Service.Address item.Node.Address) as |address|}}
+              <ConsulCopyButton @value={{format-ipaddr address}} @name='Address'>{{format-ipaddr address}}</ConsulCopyButton>
+            {{/let}}
+          </:actions>
+          <:content>
+            <TabNav
+              @items={{compact
+                (array
+                  (hash
+                    label='Health Checks'
+                    href=(href-to 'dc.services.instance.healthchecks')
+                    selected=(is-href 'dc.services.instance.healthchecks')
+                  )
+                  (if
+                    (eq item.Service.Kind 'mesh-gateway')
+                    (hash
+                      label='Addresses'
+                      href=(href-to 'dc.services.instance.addresses')
+                      selected=(is-href 'dc.services.instance.addresses')
+                    )
+                  )
+                  (if
+                    this.proxy
+                    (hash
+                      label='Upstreams'
+                      href=(href-to 'dc.services.instance.upstreams')
+                      selected=(is-href 'dc.services.instance.upstreams')
+                    )
+                  )
+                  (if
+                    this.proxy
+                    (hash
+                      label='Exposed Paths'
+                      href=(href-to 'dc.services.instance.exposedpaths')
+                      selected=(is-href 'dc.services.instance.exposedpaths')
+                    )
+                  )
+                  (hash
+                    label='Tags & Meta'
+                    href=(href-to 'dc.services.instance.metadata')
+                    selected=(is-href 'dc.services.instance.metadata')
+                  )
+                )
+              }}
+            />
+            <Outlet
+              @name={{this.routeName}}
+              @model={{assign (hash proxy=this.proxy meta=this.meta item=item) route.model}}
+              as |o|
+            >
+              {{outlet}}
+            </Outlet>
+          </:content>
+        </AppView>
+      {{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

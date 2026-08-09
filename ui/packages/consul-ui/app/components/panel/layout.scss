@@ -1,0 +1,16 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%panel {
+  --padding-x: 14px;
+  --padding-y: 14px;
+  /* max-height: var(--panel-height, auto); */
+}
+%panel {
+  position: relative;
+}
+%panel-separator {
+  margin: 0;
+}

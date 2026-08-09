@@ -1,0 +1,19 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{did-insert-helper this.connect}}
+{{will-destroy-helper this.disconnect}}
+{{yield (hash
+  model=this.model
+  params=this.params
+  currentName=this.router.currentRoute.name
+
+  refresh=this.refresh
+  t=this.t
+  exists=this.exists
+
+  Title=(component "route/title")
+  Announcer=(component "route/announcer")
+)}}

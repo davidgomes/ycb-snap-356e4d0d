@@ -1,0 +1,186 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{!-- template-lint-disable no-forbidden-elements --}}
+<style>
+  {{#if this.selected.nodes}}
+    {{this.selected.nodes}}
+    { opacity: 1 !important; background-color: var(--token-color-surface-interactive); border:
+    var(--decor-border-100); border-radius: var(--decor-radius-200); border-color:
+    var(--token-color-foreground-faint); box-shadow: var(--token-surface-high-box-shadow); }
+  {{/if}}
+  {{#if this.selected.edges}}
+    {{this.selected.edges}}
+    { opacity: 1; }
+  {{/if}}
+</style>
+
+<div class='routes'>
+  <header aria-label="Routes configuration">
+    <h2>
+      {{@chain.ServiceName}}
+      Router
+      <span
+        {{hds-tooltip
+          'Use routers to intercept traffic using Layer 7 criteria such as path prefixes or http headers.'
+          options=(detached-tooltip-options)
+        }}
+      >
+      </span>
+    </h2>
+  </header>
+  <div role='group'>
+    {{#each this.routes as |item|}}
+      <Consul::DiscoveryChain::RouteCard
+        {{on-resize (dom-position (set item 'rect') from=this.edges)}}
+        @item={{item}}
+        @onclick={{action 'click'}}
+      />
+    {{/each}}
+  </div>
+</div>
+
+<div class='splitters'>
+  <header aria-label="Splitters configuration">
+    <h2>
+      Splitters
+      <span
+        {{hds-tooltip
+          'Splitters are configured to split incoming requests across different services or subsets of a single service.'
+          options=(detached-tooltip-options)
+        }}
+      >
+      </span>
+    </h2>
+  </header>
+  <div role='group'>
+    {{#each (sort-by 'Name' this.splitters) as |item|}}
+      <Consul::DiscoveryChain::SplitterCard
+        {{on-resize (dom-position (set item 'rect') from=this.edges)}}
+        @item={{item}}
+        @onclick={{action 'click'}}
+      />
+    {{/each}}
+  </div>
+</div>
+
+<div class='resolvers'>
+  <header aria-label="Resolvers configuration">
+    <h2>
+      Resolvers
+      <span
+        {{hds-tooltip
+          'Resolvers are used to define which instances of a service should satisfy discovery requests.'
+          options=(detached-tooltip-options)
+        }}
+      >
+      </span>
+    </h2>
+  </header>
+  <div role='group'>
+    {{#each (sort-by 'Name' this.resolvers) as |item|}}
+      <Consul::DiscoveryChain::ResolverCard
+        {{on-resize (dom-position (set item 'rect') from=this.edges)}}
+        @item={{item}}
+        @edges={{this.edges}}
+        @onclick={{action 'click'}}
+      />
+    {{/each}}
+  </div>
+</div>
+
+{{this.nodes}}
+
+<svg
+  class='edges'
+  {{did-insert (set this 'edges')}}
+  width='100%'
+  height='100%'
+  preserveAspectRatio='none'
+  aria-hidden='true'
+>
+  {{#each this.routes as |item|}}
+    {{#if item.rect}}
+      {{#let item.rect item.NextItem.rect as |src destRect|}}
+        {{#let
+          (tween-to (hash x=destRect.x y=(add destRect.y (div destRect.height 2))) (concat item.ID))
+          as |dest|
+        }}
+
+          <path
+            id={{concat item.ID '>' item.NextNode}}
+            d={{svg-curve
+              (hash x=dest.x y=(sub dest.y 0))
+              src=(hash x=src.right y=(add src.y (div src.height 2)))
+            }}
+          ></path>
+
+        {{/let}}
+      {{/let}}
+    {{/if}}
+  {{/each}}
+
+  {{#each this.splitters as |splitter|}}
+    {{#if splitter.rect}}
+      {{#let splitter.rect as |src|}}
+        {{#each splitter.Splits as |item index|}}
+          {{#let item.NextItem.rect as |destRect|}}
+            {{#let
+              (tween-to
+                (hash x=destRect.x y=(add destRect.y (div destRect.height 2)))
+                (concat splitter.ID '-' index)
+              )
+              as |dest|
+            }}
+
+              <path
+                {{hds-tooltip
+                  (concat (round (or item.Weight 0) decimals=2) '%')
+                  options=(detached-tooltip-options followCursor=true)
+                }}
+                tabindex='-1'                
+                id={{concat 'splitter:' splitter.Name '>' item.NextNode}}
+                class='split'
+                d={{svg-curve
+                  (hash x=dest.x y=dest.y)
+                  src=(hash x=src.right y=(add src.y (div src.height 2)))
+                }}
+              ></path>
+
+            {{/let}}
+          {{/let}}
+        {{/each}}
+      {{/let}}
+    {{/if}}
+  {{/each}}
+
+</svg>
+
+<svg class='resolver-inlets' height='100%' aria-hidden='true'>
+  {{#each this.routes as |item|}}
+    {{#if (string-starts-with item.NextNode 'resolver:')}}
+      {{#let (or item.NextItem.rect (hash y=0 height=0)) as |dest|}}
+        <circle r='2.5' cx='5' cy={{add dest.y (div dest.height 2)}}></circle>
+      {{/let}}
+    {{/if}}
+  {{/each}}
+  {{#each this.splitters as |item|}}
+    {{#each item.Splits as |item|}}
+      {{#let (or item.NextItem.rect (hash y=0 height=0)) as |dest|}}
+        <circle r='2.5' cx='5' cy={{add dest.y (div dest.height 2)}}></circle>
+      {{/let}}
+    {{/each}}
+  {{/each}}
+</svg>
+
+<svg class='splitter-inlets' height='100%' aria-hidden='true'>
+  {{#each this.routes as |item|}}
+    {{#if (string-starts-with item.NextNode 'splitter:')}}
+      {{#let (or item.NextItem.rect (hash y=0 height=0)) as |dest|}}
+        <circle r='2.5' cx='5' cy={{add dest.y (div dest.height 2)}}></circle>
+      {{/let}}
+    {{/if}}
+  {{/each}}
+</svg>

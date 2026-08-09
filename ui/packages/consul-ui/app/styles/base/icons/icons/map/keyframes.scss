@@ -1,0 +1,14 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@keyframes icon-map {
+  100% {
+
+    -webkit-mask-image: var(--icon-map-16);
+    mask-image: var(--icon-map-16);
+    background-color: var(--icon-color, var(--color-map-500, currentColor));
+
+  }
+}

@@ -1,0 +1,184 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader @src={{
+      uri '/${partition}/${nspace}/${dc}/topology/${name}/${kind}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        name=route.params.name
+        kind=(or (get route.model.items "firstObject.Service.Kind") '')
+      )
+  }}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+  route.params.nspace
+  route.model.dc
+  route.model.items
+  loader.data
+as |nspace dc items topology|}}
+  <div class="tab-section">
+
+    <div
+      class="topology-notices"
+    >
+      <Disclosure
+        @expanded={{true}}
+        as |disclosure|
+      >
+        {{! Make a map of key=enabled to tell us which notices are enabled }}
+        {{! The `false` here is so we can easily open all the notices up by changing to `true` }}
+        {{#let
+          (from-entries (array
+            (array 'filtered-by-acls' (or false topology.FilteredByACLs))
+            (array 'default-allow' (or false (eq dc.DefaultACLPolicy 'allow')))
+            (array 'wildcard-intention' (or false topology.wildcardIntention))
+            (array 'not-defined-intention' (or false topology.notDefinedIntention))
+            (array 'no-dependencies' (or false (and topology.noDependencies (can 'use acls'))))
+            (array 'acls-disabled' (or false (and topology.noDependencies (not (can 'use acls')))))
+          ))
+        as |notices|}}
+
+          {{! Make an array only of truthy values to we know how many notices are enabled }}
+          {{#let (without false
+            (values notices)
+          ) as |noticesEnabled|}}
+
+            {{! Render any enabled notices }}
+            {{#each-in notices as |prop enabled|}}
+              {{#if enabled}}
+                <disclosure.Details
+                  @auto={{false}}
+                as |details|>
+                  <Hds::Alert id={{details.id}}
+                              @type='inline'
+                              @color={{if (includes prop (array 'filtered-by-acls' 'no-dependencies'))
+                                          'neutral'
+                                          'warning'}}
+                              class='mb-3 mt-2 topology-metrics-notice'
+                              data-test-notice={{prop}}
+                              as |A|>
+                    <A.Title>
+                      {{compute (fn route.t 'notice.${prop}.header'
+                                  (hash
+                                    prop=prop
+                                  ))
+                      }}
+                    </A.Title>
+                    {{#if disclosure.expanded}}
+                      <A.Description>
+                        {{compute (fn route.t 'notice.${prop}.body'
+                                    (hash
+                                      prop=prop
+                                    ))
+                        }}
+                      </A.Description>
+                    {{/if}}
+                    {{#if (and disclosure.expanded (not-eq prop 'filtered-by-acls'))}}
+                      {{#if (includes prop (array 'wildcard-intention' 'default-allow' 'no-intentions'))}}
+                        <A.Button
+                          @color='secondary'
+                          @size='small'
+                          @route='dc.services.show.intentions'
+                          @text={{compute (fn route.t 'notice.${prop}.footer.link-text'
+                                            (hash
+                                              prop=prop
+                                            ))}}
+                          @icon={{compute (fn route.t 'notice.${prop}.footer.icon'
+                                            (hash
+                                              prop=prop
+                                            ))}}
+                        />
+                      {{else}}
+                        <A.Link::Standalone
+                          @text={{compute (fn route.t 'notice.${prop}.footer.link-text'
+                                            (hash
+                                              prop=prop
+                                            ))}}
+                          @href={{compute (fn route.t 'notice.${prop}.footer.link'
+                                            (hash
+                                              prop=prop
+                                            ))}}
+                          @icon='docs-link'
+                          @iconPosition='trailing'
+                        />
+                      {{/if}}
+                    {{/if}}
+                  </Hds::Alert>
+                </disclosure.Details>
+              {{/if}}
+            {{/each-in}}
+
+            {{! If more than 2 notices are enabled let the user close them }}
+            {{#if (gt noticesEnabled.length 2)}}
+              <disclosure.Action
+                {{on 'click' disclosure.toggle}}
+              >
+              {{compute (fn route.t 'notices.${expanded}'
+                (hash
+                  expanded=(if disclosure.expanded 'close' 'open')
+                )
+              )}}
+              </disclosure.Action>
+            {{/if}}
+
+          {{/let}}
+        {{/let}}
+      </Disclosure>
+
+    </div>
+
+
+    <DataSource
+      @src={{uri '/${partition}/${nspace}/${dc}/ui-config'
+        (hash
+          partition=route.params.partition
+          nspace=route.params.nspace
+          dc=route.params.dc
+        )
+      }}
+    as |config|>
+    {{#if config.data}}
+       {{! template-lint-disable no-array-prototype-extensions }}
+      <TopologyMetrics
+        @nspace={{nspace}}
+        @dc={{dc}}
+        @service={{get items "firstObject"}}
+        @topology={{topology}}
+
+        @metricsHref={{render-template config.data.dashboard_url_templates.service
+          (hash
+            Datacenter=dc.Name
+            Service=(hash
+              Name=(get items "firstObject.Name")
+              Namespace=(or (get items "firstObject.Namespace") '')
+              Partition=(or (get items "firstObject.Partition") '')
+            )
+          )
+        }}
+        @isRemoteDC={{not dc.Local}}
+        @hasMetricsProvider={{gt config.data.metrics_provider.length 0}}
+        @oncreate={{this.createIntention}}
+      />
+
+    {{/if}}
+    </DataSource>
+  </div>
+{{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

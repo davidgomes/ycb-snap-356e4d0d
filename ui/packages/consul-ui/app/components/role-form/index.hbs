@@ -1,0 +1,42 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{yield}}
+<fieldset
+  class="role-form"
+  disabled={{if (not (can "write role" item=this.item)) "disabled"}}
+  data-test-role-form
+  ...attributes
+>
+    <label class="type-text{{if this.item.error.Name ' has-error'}}">
+        <span>Name</span>
+        <input type="text" value={{this.item.Name}} name="role[Name]" oninput={{action 'change'}} />
+        <em>
+          Maximum 256 characters. May only include letters (uppercase and/or lowercase) and/or numbers. Must be unique.
+        </em>
+        {{#if this.item.error.Name}}
+          <strong>{{this.item.error.Name.validation}}</strong>
+        {{/if}}
+    </label>
+  <label class="type-text">
+    <span>Description (Optional)</span>
+    <textarea name="role[Description]" value={{this.item.Description}} oninput={{action 'change'}}></textarea>
+  </label>
+</fieldset>
+{{!TODO: temporary policies id, look at the inception token modals and get rid of id="policies" and use something else}}
+<fieldset id="policies" class="policies">
+  <h2>Policies</h2>
+  {{#if (has-block 'policy')}}
+    {{yield this.item to='policy'}}
+  {{else}}
+    <PolicySelector
+      @disabled={{not (can "write role" item=this.item)}}
+      @dc={{@dc}}
+      @partition={{@partition}}
+      @nspace={{@nspace}}
+      @items={{this.item.Policies}}
+    />
+  {{/if}}
+</fieldset>

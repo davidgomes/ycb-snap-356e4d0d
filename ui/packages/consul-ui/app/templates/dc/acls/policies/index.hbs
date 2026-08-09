@@ -1,0 +1,150 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader
+    @src={{
+      uri '/${partition}/${nspace}/${dc}/policies'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+      )}}>
+
+    <:error as |loader|>
+    {{#if (eq loader.error.status '401')}}
+      <Consul::Acl::Disabled />
+    {{else}}
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    {{/if}}
+    </:error>
+
+    <:loaded as |loader|>
+  {{#let
+
+    (hash
+      value=(or this.sortBy "Name:asc")
+      change=(action (mut this.sortBy) value="target.selected")
+    )
+
+    (hash
+      kind=(hash
+        value=(if this.kind (split this.kind ',') undefined)
+        change=(action (mut this.kind) value="target.selectedItems")
+      )
+      datacenter=(hash
+        value=(if this.datacenter (split this.datacenter ',') undefined)
+        change=(action (mut this.datacenter) value="target.selectedItems")
+      )
+      searchproperty=(hash
+        value=(if (not-eq this.searchproperty undefined)
+          (split this.searchproperty ',')
+          this.searchProperties
+        )
+        change=(action (mut this.searchproperty) value="target.selectedItems")
+        default=this.searchProperties
+      )
+    )
+
+    loader.data
+
+  as |sort filters items|}}
+    <AppView
+      @login={{route.model.app.login.open}}
+      >
+      <:header>
+        <h1>
+          <route.Title @title="Policies" />
+        </h1>
+      </:header>
+      <:actions>
+  {{#if (can "create policies")}}
+    <Hds::Button
+      @text='Create'
+      @route='dc.acls.policies.create'
+      data-test-create
+    />
+  {{/if}}
+      </:actions>
+      <:toolbar>
+      {{#if (gt items.length 0) }}
+        <Consul::Policy::SearchBar
+          @partition={{route.params.partition}}
+
+          @search={{this.search}}
+          @onsearch={{action (mut this.search) value="target.value"}}
+
+          @sort={{sort}}
+
+          @filter={{filters}}
+        />
+      {{/if}}
+      </:toolbar>
+      <:content>
+        <DataCollection
+          @type="policy"
+          @sort={{sort.value}}
+          @filters={{filters}}
+          @search={{this.search}}
+          @items={{items}}
+        as |collection|>
+          <collection.Collection>
+            <Consul::Policy::List
+              @items={{collection.items}}
+              @ondelete={{this.delete}}
+            />
+          </collection.Collection>
+          <collection.Empty>
+            <EmptyState
+              @login={{route.model.app.login.open}}
+            >
+              <:header>
+                <h2>
+                  {{t 'routes.dc.acls.policies.index.empty.header'
+                    items=items.length
+                  }}
+                </h2>
+              </:header>
+              <:body>
+                {{t 'routes.dc.acls.policies.index.empty.body'
+                  items=items.length
+                  htmlSafe=true
+                }}
+              </:body>
+              <:actions>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Documentation on policies'
+                    @href="{{env 'CONSUL_DOCS_URL'}}/commands/acl/policy"
+                    @icon='docs-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Take the tutorial'
+                    @href="{{env 'CONSUL_LEARN_URL'}}/consul/security-networking/managing-acl-policies"
+                    @icon='learn-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+              </:actions>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+      </:content>
+    </AppView>
+
+  {{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

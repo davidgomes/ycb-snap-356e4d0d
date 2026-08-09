@@ -1,0 +1,38 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<ListCollection
+  class="consul-auth-method-list"
+  @items={{@items}}
+>
+  <:header as |item|>
+  {{#if (not-eq item.DisplayName '')}}
+    <a data-test-auth-method href={{href-to "dc.acls.auth-methods.show" item.Name}}>
+      {{item.DisplayName}}
+    </a>
+  {{else}}
+    <a data-test-auth-method href={{href-to "dc.acls.auth-methods.show" item.Name}}>
+      {{item.Name}}
+    </a>
+  {{/if}}
+  </:header>
+  <:details as |item|>
+    <Consul::AuthMethod::Type @item={{item}} />
+  {{#if (not-eq item.DisplayName '')}}
+    <span data-test-display-name>{{item.Name}}</span>
+  {{/if}}
+  {{#if (eq item.TokenLocality 'global')}}
+    <span class="locality">creates global tokens</span>
+  {{/if}}
+  {{#if item.MaxTokenTTL}}
+    <dl class="ttl">
+      <dt {{hds-tooltip "Maximum Time to Live: the maximum life of any token created by this auth method" options=(detached-tooltip-options)}}>
+        Maximum Time to Live
+      </dt>
+      <dd>{{item.MaxTokenTTL}}</dd>
+    </dl>
+  {{/if}}
+  </:details>
+</ListCollection>
