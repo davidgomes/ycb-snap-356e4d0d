@@ -14,6 +14,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/x509"
 	"encoding/json"
@@ -3118,4 +3119,131 @@ func TestAuthCalloutOperatorModeMQTTOpaquePasswordUsesDefaultSentinel(t *testing
 	require_Equal(t, got.jwt, defaultSentinel)
 	require_Equal(t, got.password, opaquePassword)
 	require_Equal(t, rc, mqttConnAckRCConnectionAccepted)
+}
+
+func pingBeforeConnect(t *testing.T, srv *Server) net.Conn {
+	t.Helper()
+	addr := srv.Addr()
+	require_True(t, addr != nil)
+	conn, err := net.Dial("tcp", addr.String())
+	require_NoError(t, err)
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	br := bufio.NewReader(conn)
+	line, err := br.ReadString('\n')
+	require_NoError(t, err)
+	require_True(t, strings.HasPrefix(line, "INFO "))
+
+	_, err = conn.Write([]byte("PING\r\n"))
+	require_NoError(t, err)
+	return conn
+}
+
+func TestAuthCalloutNoAuthUserPingBeforeConnectDenied(t *testing.T) {
+	conf := `
+		listen: "127.0.0.1:-1"
+		server_name: ZZ
+		accounts {
+			AUTH { users [ {user: "auth", password: "pwd"} ] }
+			FOO { users [ {user: "foo", password: "pwd"} ] }
+			BAR {}
+			SYS { users [ {user: "sys", password: "pwd"} ] }
+		}
+		system_account: SYS
+		no_auth_user: foo
+		authorization {
+			timeout: 1s
+			auth_callout {
+				issuer: "ABJHLOVMPA4CI6R5KLNGOB4GSLNIY7IOUPAJC4YFNDLQVIOBYQGUWVLA"
+				account: AUTH
+				auth_users: [ auth ]
+				allowed_accounts: [ FOO, BAR ]
+			}
+		}
+	`
+	callouts := uint32(0)
+	handler := func(m *nats.Msg) {
+		atomic.AddUint32(&callouts, 1)
+		m.Respond(nil)
+	}
+
+	at := NewAuthTest(t, conf, handler, nats.UserInfo("auth", "pwd"))
+	defer at.Cleanup()
+	require_NoError(t, at.authClient.Flush())
+
+	conn := pingBeforeConnect(t, at.srv)
+	defer conn.Close()
+
+	br := bufio.NewReader(conn)
+	line, err := br.ReadString('\n')
+	require_NoError(t, err)
+	require_True(t, strings.Contains(line, "Authorization Violation"))
+	require_NotEqual(t, strings.TrimSpace(line), "PONG")
+	if atomic.LoadUint32(&callouts) == 0 {
+		t.Fatalf("Expected auth callout to be invoked for PING before CONNECT")
+	}
+}
+
+func TestAuthCalloutNoAuthUserPingBeforeConnectExpires(t *testing.T) {
+	conf := `
+		listen: "127.0.0.1:-1"
+		server_name: ZZ
+		accounts {
+			AUTH { users [ {user: "auth", password: "pwd"} ] }
+			FOO { users [ {user: "foo", password: "pwd"} ] }
+			BAR {}
+			SYS { users [ {user: "sys", password: "pwd"} ] }
+		}
+		system_account: SYS
+		no_auth_user: foo
+		authorization {
+			timeout: 1s
+			auth_callout {
+				issuer: "ABJHLOVMPA4CI6R5KLNGOB4GSLNIY7IOUPAJC4YFNDLQVIOBYQGUWVLA"
+				account: AUTH
+				auth_users: [ auth ]
+				allowed_accounts: [ FOO, BAR ]
+			}
+		}
+	`
+	callouts := uint32(0)
+	handler := func(m *nats.Msg) {
+		atomic.AddUint32(&callouts, 1)
+		user, si, _, _, _ := decodeAuthRequest(t, m.Data)
+		ujwt := createAuthUser(t, user, _EMPTY_, "BAR", "", nil, 2*time.Second, nil)
+		m.Respond(serviceResponse(t, user, si.ID, ujwt, "", 0))
+	}
+
+	at := NewAuthTest(t, conf, handler, nats.UserInfo("auth", "pwd"))
+	defer at.Cleanup()
+	require_NoError(t, at.authClient.Flush())
+
+	conn := pingBeforeConnect(t, at.srv)
+	defer conn.Close()
+
+	br := bufio.NewReader(conn)
+	line, err := br.ReadString('\n')
+	require_NoError(t, err)
+	require_Equal(t, strings.TrimSpace(line), "PONG")
+	if atomic.LoadUint32(&callouts) == 0 {
+		t.Fatalf("Expected auth callout to be invoked for PING before CONNECT")
+	}
+
+	conn.SetDeadline(time.Now().Add(6 * time.Second))
+	expired := false
+	for {
+		line, err = br.ReadString('\n')
+		if err != nil {
+			break
+		}
+		trim := strings.TrimSpace(line)
+		if trim == "PING" {
+			continue
+		}
+		if strings.Contains(line, "User Authentication Expired") {
+			expired = true
+			break
+		}
+	}
+	require_True(t, expired)
 }

@@ -183,11 +183,19 @@ func (c *client) parse(buf []byte) error {
 							s.mu.Unlock()
 							// Enforce the same connection restrictions as CONNECT before allowing.
 							if exists && !user.ProxyRequired && c.connectionTypeAllowed(user.AllowedConnectionTypes) {
-								c.RegisterUser(user)
 								c.mu.Lock()
 								c.clearAuthTimer()
 								c.flags.set(connectReceived)
 								c.mu.Unlock()
+								// When auth callout is enabled, use the same path as CONNECT so the
+								// callout can deny the client or issue a short-lived credential.
+								if opts.AuthCallout != nil {
+									if !s.checkAuthentication(c) {
+										goto authErr
+									}
+								} else {
+									c.RegisterUser(user)
+								}
 								authSet, ok = false, true
 							}
 						}
