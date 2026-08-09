@@ -1,0 +1,1 @@
+../src/get-pulsar-version.sh
