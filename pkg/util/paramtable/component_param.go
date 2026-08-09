@@ -5231,7 +5231,7 @@ user-task-polling:
 		Key:          "queryNode.externalCollection.rawDataFactor",
 		Version:      "3.0.0",
 		DefaultValue: "2.0",
-		Doc:          "Peak memory amplification factor for external segment loading. External tables always download, decompress, and deserialize entire row groups into Arrow buffers regardless of mmap/eviction settings, so peak transient memory = rawDataSize * this factor.",
+		Doc:          "Peak memory amplification factor for external segment loading when tiered eviction is disabled. External tables download, decompress, and deserialize entire row groups into Arrow buffers, so peak transient memory = rawDataSize * this factor. Default 2.0. When tiered eviction is enabled, this extra Go-side margin is not applied because the caching layer already reserves cell storage and transient loading overhead for the same raw data.",
 		Export:       false,
 	}
 	p.ExternalCollectionRawDataFactor.Init(base.mgr)

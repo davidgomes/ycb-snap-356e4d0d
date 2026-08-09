@@ -2463,7 +2463,10 @@ func (suite *ExternalSegmentEstimateSuite) externalLoadInfo(numRows int64, memor
 
 func (suite *ExternalSegmentEstimateSuite) TestEstimatedBytesPerRow() {
 	loadInfo := suite.externalLoadInfo(1000, 576000) // 576 bytes/row
-	factor := resourceEstimateFactor{externalRawDataFactor: 1.0}
+	factor := resourceEstimateFactor{
+		externalRawDataFactor: 2.0,
+		TieredEvictionEnabled: false,
+	}
 
 	usage, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfo, factor)
 	suite.NoError(err)
@@ -2471,9 +2474,27 @@ func (suite *ExternalSegmentEstimateSuite) TestEstimatedBytesPerRow() {
 	suite.Equal(int64(576), loadInfo.EstimatedBytesPerRow)
 }
 
+func (suite *ExternalSegmentEstimateSuite) TestEstimatedBytesPerRow_TieredEvictionEnabled() {
+	loadInfo := suite.externalLoadInfo(1000, 576000) // 576 bytes/row
+	factor := resourceEstimateFactor{
+		externalRawDataFactor: 2.0,
+		TieredEvictionEnabled: true,
+	}
+
+	usage, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfo, factor)
+	suite.NoError(err)
+	suite.NotNil(usage)
+	// Per-row size still propagates to the C++ caching path even when the
+	// extra Go-side raw-data margin is skipped.
+	suite.Equal(int64(576), loadInfo.EstimatedBytesPerRow)
+}
+
 func (suite *ExternalSegmentEstimateSuite) TestExternalRawDataFactor() {
 	loadInfo := suite.externalLoadInfo(1000, 100000)
-	factor := resourceEstimateFactor{externalRawDataFactor: 1.5}
+	factor := resourceEstimateFactor{
+		externalRawDataFactor: 1.5,
+		TieredEvictionEnabled: false,
+	}
 
 	usage, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfo, factor)
 	suite.NoError(err)
@@ -2484,12 +2505,40 @@ func (suite *ExternalSegmentEstimateSuite) TestExternalRawDataFactor() {
 
 func (suite *ExternalSegmentEstimateSuite) TestExternalRawDataFactor_NoExtraWhenFactorLe1() {
 	loadInfo := suite.externalLoadInfo(1000, 100000)
-	factor := resourceEstimateFactor{externalRawDataFactor: 0.8}
+	factor := resourceEstimateFactor{
+		externalRawDataFactor: 0.8,
+		TieredEvictionEnabled: false,
+	}
 
 	usage, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfo, factor)
 	suite.NoError(err)
 	// factor <= 1.0, no extra memory added by PART 2.5
 	suite.True(usage.MemorySize >= 100000, "should include base binlog size")
+}
+
+func (suite *ExternalSegmentEstimateSuite) TestExternalRawDataFactor_SkippedWhenTieredEvictionEnabled() {
+	loadInfoWithFactor := suite.externalLoadInfo(1000, 100000)
+	loadInfoWithoutFactor := suite.externalLoadInfo(1000, 100000)
+
+	withFactor, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfoWithFactor, resourceEstimateFactor{
+		externalRawDataFactor: 2.0,
+		TieredEvictionEnabled: true,
+	})
+	suite.NoError(err)
+
+	withoutFactor, err := estimateLoadingResourceUsageOfSegment(suite.schema, loadInfoWithoutFactor, resourceEstimateFactor{
+		externalRawDataFactor: 1.0,
+		TieredEvictionEnabled: true,
+	})
+	suite.NoError(err)
+
+	// Caching layer already reserves cell storage + transient loading overhead.
+	// The Go loading estimate must not apply the extra raw-data margin again.
+	suite.Equal(withoutFactor.MemorySize, withFactor.MemorySize,
+		"tiered eviction must not charge extra raw-data margin: withFactor=%d withoutFactor=%d",
+		withFactor.MemorySize, withoutFactor.MemorySize)
+	suite.Equal(withoutFactor.DiskSize, withFactor.DiskSize)
+	suite.Equal(int64(100), loadInfoWithFactor.EstimatedBytesPerRow)
 }
 
 func (suite *ExternalSegmentEstimateSuite) TestLazyLoadSubtractsRawData() {

@@ -617,6 +617,10 @@ func TestComponentParam(t *testing.T) {
 		params.Save(Params.ExternalCollectionUseTakeForOutput.Key, "false")
 		assert.False(t, Params.ExternalCollectionUseTakeForOutput.GetAsBool())
 
+		assert.Equal(t, 2.0, Params.ExternalCollectionRawDataFactor.GetAsFloat())
+		assert.Contains(t, Params.ExternalCollectionRawDataFactor.Doc, "when tiered eviction is disabled")
+		assert.Contains(t, Params.ExternalCollectionRawDataFactor.Doc, "When tiered eviction is enabled")
+
 		// test CatchUpStreamingDataTsLag parameter
 		assert.Equal(t, 1*time.Second, Params.CatchUpStreamingDataTsLag.GetAsDurationByParse())
 		params.Save(Params.CatchUpStreamingDataTsLag.Key, "5s")
