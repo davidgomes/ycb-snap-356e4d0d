@@ -1170,3 +1170,76 @@ func TestHandleBatchCopResponseUpdatesChildBucketsOnVersionNotMatch(t *testing.T
 	require.Equal(t, uint64(99), loc.Buckets.GetVersion())
 	require.Equal(t, bucketKeys, loc.Buckets.GetKeys())
 }
+
+func TestHandleBatchCopResponseFallbackCountAfterEpochNotMatchSplit(t *testing.T) {
+	mockClient, cluster, pdClient, err := testutils.NewMockTiKV("", nil)
+	require.NoError(t, err)
+	storeID, regionIDs, _ := testutils.BootstrapWithMultiRegions(cluster, []byte("m"))
+
+	tikvStore, err := tikv.NewTestTiKVStore(mockClient, pdClient, nil, nil, 0)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, tikvStore.Close())
+	}()
+	copStore, err := NewStore(tikvStore, nil)
+	require.NoError(t, err)
+	defer copStore.Close()
+
+	cache := copStore.GetRegionCache()
+	bo := backoff.NewBackofferWithVars(context.Background(), 3000, nil)
+	req := &kv.Request{}
+
+	parentTasks, err := buildCopTasks(bo, buildCopRanges("a", "b"), &buildCopTaskOpt{
+		req:   req,
+		cache: cache,
+	})
+	require.NoError(t, err)
+	require.Len(t, parentTasks, 1)
+	childTasks, err := buildCopTasks(bo, buildCopRanges("n", "z"), &buildCopTaskOpt{
+		req:   req,
+		cache: cache,
+	})
+	require.NoError(t, err)
+	require.Len(t, childTasks, 1)
+
+	parentTask := parentTasks[0]
+	childTask := childTasks[0]
+	require.Equal(t, regionIDs[1], childTask.region.GetID())
+	childTask.taskID = 1
+
+	// Split the failed child's region so retry rebuild fans out into multiple tasks.
+	newRegionID := cluster.AllocID()
+	newPeerID := cluster.AllocID()
+	cluster.Split(regionIDs[1], newRegionID, []byte("t"), []uint64{newPeerID}, storeID)
+	cache.InvalidateCachedRegion(childTask.region)
+
+	var storeBatchedNum atomic.Uint64
+	var storeBatchedFallbackNum atomic.Uint64
+	worker := &copIteratorWorker{
+		store:                   copStore,
+		req:                     req,
+		storeBatchedNum:         &storeBatchedNum,
+		storeBatchedFallbackNum: &storeBatchedFallbackNum,
+	}
+	resp := &coprocessor.Response{
+		BatchResponses: []*coprocessor.StoreBatchTaskResponse{
+			{
+				TaskId: childTask.taskID,
+				RegionError: &errorpb.Error{
+					EpochNotMatch: &errorpb.EpochNotMatch{},
+				},
+			},
+		},
+	}
+
+	batchRespList, remains, err := worker.handleBatchCopResponse(bo, &tikv.RPCContext{
+		Region: parentTask.region,
+	}, resp, map[uint64]*batchedCopTask{
+		childTask.taskID: {task: childTask},
+	})
+	require.NoError(t, err)
+	require.Empty(t, batchRespList)
+	require.Greater(t, len(remains), 1)
+	require.Equal(t, uint64(0), storeBatchedNum.Load())
+	require.Equal(t, uint64(1), storeBatchedFallbackNum.Load())
+}

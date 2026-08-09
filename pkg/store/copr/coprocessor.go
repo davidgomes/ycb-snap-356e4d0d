@@ -2348,8 +2348,12 @@ func (worker *copIteratorWorker) handleBatchCopResponse(bo *Backoffer, rpcCtx *t
 			return
 		}
 		if !busyThresholdFallback {
-			worker.storeBatchedNum.Add(uint64(batchedNum - len(remainTasks)))
-			worker.storeBatchedFallbackNum.Add(uint64(len(remainTasks)))
+			// Count fallbacks by original batched inputs, not by retry fan-out.
+			// A region error such as EpochNotMatch can rebuild one failed child into
+			// several remain tasks after a split; those retries are still one fallback.
+			fallbackNum := batchedNum - len(batchRespList)
+			worker.storeBatchedNum.Add(uint64(len(batchRespList)))
+			worker.storeBatchedFallbackNum.Add(uint64(fallbackNum))
 		}
 	}()
 	appendRemainTasks := func(tasks ...*copTask) {
