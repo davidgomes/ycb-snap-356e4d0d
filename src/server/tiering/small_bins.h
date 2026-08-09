@@ -1,0 +1,139 @@
+// Copyright 2024, DragonflyDB authors.  All rights reserved.
+// See LICENSE for licensing terms.
+//
+
+#pragma once
+
+#include <absl/container/flat_hash_map.h>
+#include <absl/functional/function_ref.h>
+
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "core/dash.h"
+#include "server/tiering/common.h"
+#include "server/tiering/disk_storage.h"
+#include "server/tiering/entry_map.h"
+
+namespace dfly::tiering {
+
+using DbIndex = uint16_t;
+
+// Small bins accumulate small values into larger bins that fill up 4kb pages.
+// SIMPLEST VERSION for now.
+class SmallBins {
+ public:
+  struct Stats {
+    size_t stashed_bins_cnt = 0;
+    size_t stashed_entries_cnt = 0;
+    size_t current_bin_bytes = 0;
+    size_t current_entries_cnt = 0;
+  };
+
+  using BinId = unsigned;
+  static const BinId kInvalidBin = std::numeric_limits<BinId>::max();
+
+  struct BinInfo {
+    DiskSegment segment;
+    bool fragmented = false, empty = false;
+  };
+
+  // Packaged bin ready to be serialized with SerializeBin()
+  struct FilledBin {
+    friend class SmallBins;
+    BinId id;
+
+   private:
+    explicit FilledBin(BinId id) : id{id} {
+    }
+
+    unsigned bytes_ = 0;
+    tiering::EntryMap<std::string> entries_;
+  };
+
+  // List of locations of values for corresponding keys of previously filled bin
+  using KeySegmentList = std::vector<std::tuple<DbIndex, std::string /* key*/, DiskSegment>>;
+
+  // List of item key db indices and hashes
+  using KeyHashDbList = std::vector<std::tuple<DbIndex, uint64_t /* hash */, DiskSegment>>;
+
+  // Returns true if the entry is pending inside SmallBins.
+  bool IsPending(DbIndex dbid, std::string_view key) const {
+    return current_bin_.entries_.count(std::make_pair(dbid, key)) > 0;
+  }
+
+  // Enqueue key/value pair for stash. Returns page to be stashed if it filled up.
+  std::optional<FilledBin> Stash(DbIndex dbid, std::string_view key, std::string_view value);
+
+  // Report that a stash succeeeded. Returns list of stored keys with calculated value locations.
+  KeySegmentList ReportStashed(BinId id, DiskSegment segment);
+
+  // Report that a stash was aborted. Returns list of keys that the entry contained.
+  std::vector<std::pair<DbIndex, std::string>> ReportStashAborted(BinId id);
+
+  // Delete a key with pending io. Returns entry id if needs to be deleted.
+  std::optional<BinId> Delete(DbIndex dbid, std::string_view key);
+
+  // Delete a stored segment. Returns information about the current bin, which might indicate
+  // the need for external actions like deleting empty segments or triggering defragmentation
+  BinInfo Delete(DiskSegment segment);
+
+  // Returns true if the page exists and is fragmented
+  bool IsFragmented(size_t offset);
+
+  // Delete stashed bin. Returns list of recovered item key hashes and db indices.
+  // Mainly used for defragmentation
+  KeyHashDbList DeleteBin(DiskSegment segment, std::string_view value);
+
+  // Serialize filled bin to destination buffer (4kb)
+  size_t SerializeBin(FilledBin* bin, io::MutableBytes dest);
+
+  // Traverse stashed bins and run callback on those that are fragmented
+  ::dfly::detail::DashCursor TraverseFragmented(::dfly::detail::DashCursor,
+                                                absl::FunctionRef<void(size_t /* offset */)>);
+
+  Stats GetStats() const;
+
+ private:
+  struct StashInfo {
+    uint8_t entries = 0;
+    uint16_t bytes = 0;
+  };
+  static_assert(sizeof(StashInfo) == sizeof(unsigned));
+
+  BinId last_bin_id_ = 0;
+  FilledBin current_bin_{last_bin_id_};
+
+  // Pending stashes, their keys and value sizes
+  absl::flat_hash_map<unsigned /* id */, tiering::EntryMap<DiskSegment>> pending_bins_;
+
+  struct BasicDashPolicy {
+    enum { kSlotNum = 12, kBucketNum = 64 };
+    static constexpr bool kUseVersion = false;
+
+    template <typename U> static void DestroyValue(const U&) {
+    }
+    template <typename U> static void DestroyKey(const U&) {
+    }
+
+    template <typename U, typename V> static bool Equal(U&& u, V&& v) {
+      return u == v;
+    }
+
+    // Keys are page-aligned (% kPageSize == 0), dividing by kPageSize does not fix the problem as
+    // dashtable expects are more or less random distribution of all bits (including higher)
+    static uint64_t HashFn(uint64_t v);
+  };
+
+  using Dash = dfly::DashTable<size_t /* offset */, StashInfo, BasicDashPolicy>;
+
+  // Map of bins that were stashed and should be deleted when number of entries reaches 0
+  Dash stashed_bins_;
+
+  struct {
+    size_t stashed_entries_cnt = 0;
+  } stats_;
+};
+
+};  // namespace dfly::tiering
