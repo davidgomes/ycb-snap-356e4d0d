@@ -1,0 +1,337 @@
+// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:nil -*-
+// vim: ts=8 sw=2 sts=2 expandtab ft=cpp
+
+/*
+ * Ceph - scalable distributed file system
+ *
+ * Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
+ *
+ * This is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License version 2.1, as published by the Free Software
+ * Foundation. See file COPYING.
+ *
+ */
+
+#include <string.h>
+
+#include <iostream>
+#include <map>
+#include <vector>
+
+#include <boost/algorithm/string.hpp>
+
+#include "include/types.h"
+#include "common/debug.h"
+#include "include/str_list.h"
+#include "common/ceph_json.h"
+#include "common/Formatter.h"
+
+#include "rgw_cors.h"
+
+#define dout_context g_ceph_context
+#define dout_subsys ceph_subsys_rgw
+
+using namespace std;
+
+void RGWCORSRule::dump_origins() {
+  unsigned num_origins = allowed_origins.size();
+  dout(10) << "Allowed origins : " << num_origins << dendl;
+  for(auto& origin : allowed_origins) {
+    dout(10) << origin << "," << dendl;
+  }
+}
+
+void RGWCORSRule::dump(Formatter *f) const
+{
+  f->open_object_section("CORSRule");
+  f->dump_string("ID", id);
+  f->dump_unsigned("MaxAgeSeconds", max_age);
+  f->dump_unsigned("AllowedMethod", allowed_methods);
+  encode_json("AllowedOrigin", allowed_origins, f);
+  encode_json("AllowedHeader", allowed_hdrs, f);
+  encode_json("ExposeHeader", exposable_hdrs, f);
+  f->close_section();//CORSRule
+}
+
+void RGWCORSRule::erase_origin_if_present(string& origin, bool *rule_empty) {
+  set<string>::iterator it = allowed_origins.find(origin);
+  if (!rule_empty)
+    return;
+  *rule_empty = false;
+  if (it != allowed_origins.end()) {
+    dout(10) << "Found origin " << origin << ", set size:" << 
+        allowed_origins.size() << dendl;
+    allowed_origins.erase(it);
+    *rule_empty = (allowed_origins.empty());
+  }
+}
+
+list<RGWCORSRule> RGWCORSRule::generate_test_instances()
+{
+  list<RGWCORSRule> o;
+  o.emplace_back();
+  o.emplace_back();
+  o.back().id = "test";
+  o.back().max_age = 100;
+  o.back().allowed_methods = RGW_CORS_GET | RGW_CORS_PUT;
+  o.back().allowed_origins.insert("http://origin1");
+  o.back().allowed_origins.insert("http://origin2");
+  o.back().allowed_hdrs.insert("accept-encoding");
+  o.back().allowed_hdrs.insert("accept-language");
+  o.back().exposable_hdrs.push_back("x-rgw-something");
+  return o;
+}
+
+int RGWCORSRule::create_rule(const char *allow_origins, const char *allow_headers,
+                  const char *expose_headers, const char* allowed_methods, std::optional<RGWCORSRule>& rule, const char *max_age)
+{
+  std::set<std::string> o, h;
+  std::list<std::string> e;
+  unsigned long a = CORS_MAX_AGE_INVALID;
+  const uint8_t flags = ("*"s == allowed_methods)? RGW_CORS_ALL:get_multi_cors_method_flags(allowed_methods);
+
+  int nr_invalid_names = 0;
+  auto add_host = [&nr_invalid_names, &o] (auto host) {
+    if (validate_name_string(host) == 0) {
+      o.emplace(std::string{host});
+    } else {
+      nr_invalid_names++;
+    }
+  };
+  for_each_substr(allow_origins, ";,= \t", add_host);
+  if (o.empty() || nr_invalid_names > 0) {
+    return -EINVAL;
+  }
+
+  if (allow_headers) {
+    int nr_invalid_headers = 0;
+    auto add_header = [&nr_invalid_headers, &h] (auto allow_header) {
+      if (validate_name_string(allow_header) == 0) {
+        h.emplace(std::string{allow_header});
+      } else {
+        nr_invalid_headers++;
+      }
+    };
+    for_each_substr(allow_headers, ";,= \t", add_header);
+    if (h.empty() || nr_invalid_headers > 0) {
+      return -EINVAL;
+    }
+  }
+
+  if (expose_headers) {
+    for_each_substr(expose_headers, ";,= \t",
+        [&e] (auto expose_header) {
+          e.emplace_back(std::string(expose_header));
+        });
+  }
+  if (max_age) {
+    char *end = NULL;
+    a = strtoul(max_age, &end, 10);
+    if (a == ULONG_MAX)
+      a = CORS_MAX_AGE_INVALID;
+  }
+
+  rule = RGWCORSRule(o, h, e, flags, a);
+  return 0;
+}
+
+/*
+ * make attrs look-like-this
+ * does not convert underscores or dashes
+ *
+ * Per CORS specification, section 3:
+ * ===
+ * "Converting a string to ASCII lowercase" means replacing all characters in the
+ * range U+0041 LATIN CAPITAL LETTER A to U+005A LATIN CAPITAL LETTER Z with
+ * the corresponding characters in the range U+0061 LATIN SMALL LETTER A to
+ * U+007A LATIN SMALL LETTER Z).
+ * ===
+ *
+ * @todo When UTF-8 is allowed in HTTP headers, this function will need to change
+ */
+std::string
+lowercase_http_attr(const std::string& orig)
+{
+  std::string s;
+  s.reserve(orig.size());
+  std::ranges::transform(orig, std::back_inserter(s), [](char c) -> char {
+    return tolower(static_cast<unsigned char>(c));
+  });
+  return s;
+}
+
+
+static bool is_string_in_set(set<string>& s, string h) {
+  if ((s.find("*") != s.end()) || 
+          (s.find(h) != s.end())) {
+    return true;
+  }
+  /* The header can be Content-*-type, or Content-* */
+  for(set<string>::iterator it = s.begin();
+      it != s.end(); ++it) {
+    size_t off;
+    if ((off = (*it).find("*"))!=string::npos) {
+      list<string> ssplit;
+      unsigned flen = 0;
+      
+      get_str_list((*it), "* \t", ssplit);
+      if (off != 0) {
+        if (ssplit.empty())
+          continue;
+        string sl = ssplit.front();
+        flen = sl.length();
+        dout(10) << "Finding " << sl << ", in " << h << ", at offset 0" << dendl;
+        if (!boost::algorithm::starts_with(h,sl))
+          continue;
+        ssplit.pop_front();
+      }
+      if (off != ((*it).length() - 1)) {
+        if (ssplit.empty())
+          continue;
+        string sl = ssplit.front();
+        dout(10) << "Finding " << sl << ", in " << h 
+          << ", at offset not less than " << flen << dendl;
+        if (h.size() < sl.size() ||
+	    h.compare((h.size() - sl.size()), sl.size(), sl) != 0)
+          continue;
+        ssplit.pop_front();
+      }
+      if (!ssplit.empty())
+        continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool RGWCORSRule::has_wildcard_origin() {
+  if (allowed_origins.find("*") != allowed_origins.end())
+    return true;
+
+  return false;
+}
+
+bool RGWCORSRule::is_origin_present(const char *o) {
+  string origin = o;
+  return is_string_in_set(allowed_origins, origin);
+}
+
+bool RGWCORSRule::is_header_allowed(const char *h, size_t len) {
+  string hdr(h, len);
+  if(lowercase_allowed_hdrs.empty()) {
+    set<string>::iterator iter;
+    for (iter = allowed_hdrs.begin(); iter != allowed_hdrs.end(); ++iter) {
+      lowercase_allowed_hdrs.insert(lowercase_http_attr(*iter));
+    }
+  }
+  return is_string_in_set(lowercase_allowed_hdrs, lowercase_http_attr(hdr));
+}
+
+void RGWCORSRule::format_exp_headers(string& s) {
+  s = "";
+  for (const auto& header : exposable_hdrs) {
+    if (s.length() > 0)
+      s.append(",");
+    // these values are sent to clients in a 'Access-Control-Expose-Headers'
+    // response header, so we escape '\n' to avoid header injection
+    boost::replace_all_copy(std::back_inserter(s), header, "\n", "\\n");
+  }
+}
+
+bool RGWCORSRule::matches_method(const char *req_meth)
+{
+  if (!req_meth || !*req_meth) {
+    dout(5) << "matches_method: req_meth is null or empty" << dendl;
+    return false;
+  }
+  if (allowed_methods == RGW_CORS_ALL) {
+    dout(10) << "matches_method: AllowedMethod * allows " << req_meth << dendl;
+    return true;
+  }
+  const uint8_t flags = get_multi_cors_method_flags(req_meth);
+  return flags != 0 && (allowed_methods & flags);
+}
+
+bool RGWCORSRule::matches_preflight_headers(const char *req_hdrs)
+{
+  if (!req_hdrs || !*req_hdrs) {
+    dout(20) << "matches_preflight_headers: no Access-Control-Request-Headers, "
+             << "passing per CORS spec 6.2.4" << dendl;
+    return true;
+  }
+  vector<string> hdrs;
+  get_str_vec(req_hdrs, hdrs);
+  for (const auto& hdr : hdrs) {
+    if (!is_header_allowed(hdr.c_str(), hdr.length())) {
+      dout(5) << "Header " << hdr << " is not registered in this rule" << dendl;
+      return false;
+    }
+  }
+  return true;
+}
+
+bool RGWCORSRule::matches(const char *origin,
+                          const char *req_meth,
+                          const char *req_hdrs)
+{
+  if (!origin || !*origin) {
+    return false;
+  }
+  return is_origin_present(origin)
+      && matches_method(req_meth)
+      && matches_preflight_headers(req_hdrs);
+}
+
+RGWCORSRule * RGWCORSConfiguration::match_rule(const char *origin,
+                                               const char *req_meth,
+                                               const char *req_hdrs)
+{
+  for (list<RGWCORSRule>::iterator it_r = rules.begin();
+       it_r != rules.end(); ++it_r) {
+    RGWCORSRule& r = (*it_r);
+    if (r.matches(origin, req_meth, req_hdrs)) {
+      return &r;
+    }
+  }
+  return NULL;
+}
+
+RGWCORSRule * RGWCORSConfiguration::host_name_rule(const char *origin) {
+  for(list<RGWCORSRule>::iterator it_r = rules.begin(); 
+      it_r != rules.end(); ++it_r) {
+    RGWCORSRule& r = (*it_r);
+    if (r.is_origin_present(origin))
+      return &r;
+  }
+  return NULL;
+}
+
+void RGWCORSConfiguration::erase_host_name_rule(string& origin) {
+  bool rule_empty;
+  unsigned loop = 0;
+  /*Erase the host name from that rule*/
+  dout(10) << "Num of rules : " << rules.size() << dendl;
+  for(list<RGWCORSRule>::iterator it_r = rules.begin(); 
+      it_r != rules.end(); ++it_r, loop++) {
+    RGWCORSRule& r = (*it_r);
+    r.erase_origin_if_present(origin, &rule_empty);
+    dout(10) << "Origin:" << origin << ", rule num:" 
+      << loop << ", emptying now:" << rule_empty << dendl;
+    if (rule_empty) {
+      rules.erase(it_r);
+      break;
+    }
+  }
+}
+
+void RGWCORSConfiguration::dump() {
+  unsigned loop = 1;
+  unsigned num_rules = rules.size();
+  dout(10) << "Number of rules: " << num_rules << dendl;
+  for(list<RGWCORSRule>::iterator it = rules.begin();
+      it!= rules.end(); ++it, loop++) {
+    dout(10) << " <<<<<<< Rule " << loop << " >>>>>>> " << dendl;
+    (*it).dump_origins();
+  }
+}
