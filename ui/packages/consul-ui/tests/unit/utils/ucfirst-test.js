@@ -1,0 +1,33 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import { module, test } from 'qunit';
+import ucfirst from 'consul-ui/utils/ucfirst';
+
+module('Unit | Utils | ucfirst', function () {
+  test('it returns the first letter in uppercase', function (assert) {
+    [
+      {
+        test: 'hello world',
+        expected: 'Hello world',
+      },
+      {
+        test: 'hello World',
+        expected: 'Hello World',
+      },
+      {
+        test: 'HELLO WORLD',
+        expected: 'HELLO WORLD',
+      },
+      {
+        test: 'hELLO WORLD',
+        expected: 'HELLO WORLD',
+      },
+    ].forEach(function (item) {
+      const actual = ucfirst(item.test);
+      assert.strictEqual(actual, item.expected);
+    });
+  });
+});

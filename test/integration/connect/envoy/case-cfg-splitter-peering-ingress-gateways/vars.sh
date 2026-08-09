@@ -1,0 +1,7 @@
+#!/bin/bash
+# Copyright IBM Corp. 2024, 2026
+# SPDX-License-Identifier: BUSL-1.1
+
+
+export REQUIRED_SERVICES="s1 s1-sidecar-proxy s1-alpha s1-sidecar-proxy-alpha s2-alpha s2-sidecar-proxy-alpha gateway-alpha ingress-gateway-primary"
+export REQUIRE_PEERS=1

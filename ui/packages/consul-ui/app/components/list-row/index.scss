@@ -1,0 +1,13 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+%list-row-detail dl {
+  @extend %icon-definition;
+}
+%list-row-header > dl:first-child {
+  @extend %list-row-header-icon;
+}

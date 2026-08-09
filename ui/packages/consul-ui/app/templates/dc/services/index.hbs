@@ -1,0 +1,157 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+
+  <DataLoader @src={{
+    uri '/${partition}/${nspace}/${dc}/services'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+      )
+  }}>
+
+    <:error as |api|>
+      <AppError
+        @error={{api.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |api|>
+
+{{#let
+
+  (hash
+    value=(or this.sortBy "Status:asc")
+    change=(action (mut this.sortBy) value="target.selected")
+  )
+
+  (hash
+    status=(hash
+      value=(if this.status (split this.status ',') undefined)
+      change=(action (mut this.status) value="target.selectedItems")
+    )
+    kind=(hash
+      value=(if this.kind (split this.kind ',') undefined)
+      change=(action (mut this.kind) value="target.selectedItems")
+    )
+    source=(hash
+      value=(if this.source (split this.source ',') undefined)
+      change=(action (mut this.source) value="target.selectedItems")
+    )
+    searchproperty=(hash
+      value=(if (not-eq this.searchproperty undefined)
+        (split this.searchproperty ',')
+        this._searchProperties
+      )
+      change=(action (mut this.searchproperty) value="target.selectedItems")
+      default=this._searchProperties
+    )
+
+  )
+
+  (reject-by 'Kind' 'connect-proxy' api.data)
+
+  (or route.params.partition route.model.user.token.Partition 'default')
+  (or route.params.nspace route.model.user.token.Namespace 'default')
+
+as |sort filters items partition nspace|}}
+
+  <AppView>
+    <:header>
+        <h1>
+          <route.Title @title="Services" /> <em>{{format-number items.length}} total</em>
+        </h1>
+        <label for="toolbar-toggle"></label>
+    </:header>
+    <:toolbar>
+{{#if (gt items.length 0) }}
+  {{#let (collection items) as |items|}}
+        <Consul::Service::SearchBar
+          @sources={{get items 'ExternalSources'}}
+          @partitions={{get items 'Partitions'}}
+          @partition={{partition}}
+
+          @search={{this.search}}
+          @onsearch={{action (mut this.search) value="target.value"}}
+
+          @sort={{sort}}
+
+          @filter={{filters}}
+
+        />
+  {{/let}}
+{{/if}}
+    </:toolbar>
+    <:content>
+      <DataCollection
+        @type="service"
+        @sort={{sort.value}}
+        @filters={{filters}}
+        @search={{this.search}}
+        @items={{items}}
+      as |collection|>
+        <collection.Collection>
+          <Consul::Service::List
+            @items={{collection.items}}
+            @partition={{partition}}
+            @nspace={{nspace}}
+          >
+          </Consul::Service::List>
+        </collection.Collection>
+        <collection.Empty>
+            <EmptyState
+              @login={{route.model.app.login.open}}
+            >
+              <:header>
+                <h2>
+                  {{t 'routes.dc.services.index.empty.header'
+                    items=items.length
+                  }}
+                </h2>
+              </:header>
+              <:body>
+                {{t 'routes.dc.services.index.empty.body'
+                  items=items.length
+                  canUseACLs=(can "use acls")
+                  htmlSafe=true
+                }}
+              </:body>
+              <:actions>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Documentation on Services'
+                    @href="{{env 'CONSUL_DOCS_URL'}}/commands/services"
+                    @icon='docs-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+                <li>
+                  <Hds::Link::Standalone
+                    @text='Take the tutorial'
+                    @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/getting-started/services"
+                    @icon='learn-link'
+                    @iconPosition='trailing'
+                    @size='small'
+                  />
+                </li>
+              </:actions>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+    </:content>
+
+  </AppView>
+
+{{/let}}
+
+    </:loaded>
+  </DataLoader>
+</Route>

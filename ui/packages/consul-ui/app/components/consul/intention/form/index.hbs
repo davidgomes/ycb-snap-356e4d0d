@@ -1,0 +1,222 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<div
+  class="consul-intention"
+  ...attributes
+>
+<DataForm
+  @type="intention"
+  @dc={{@dc.Name}}
+  @nspace={{@nspace}}
+  @partition={{@partition}}
+  @autofill={{@autofill}}
+  @item={{@item}}
+  @src={{@src}}
+  @onchange={{action this.change}}
+  @onsubmit={{action this.onsubmit}}
+>
+
+    <:error as |after err api|>
+{{#if (string-starts-with api.error.detail 'duplicate intention found:')}}
+  <Hds::Toast
+    @color='critical'
+    {{notification
+      after=(action after)
+    }}
+    as |T|>
+    <T.Title>Intention exists!</T.Title>
+    <T.Description>
+      An intention already exists for this Source-Destination pair. Please enter a different combination of Services, or search the intentions to edit an existing intention.
+    </T.Description>
+  </Hds::Toast>
+{{else}}
+  <Hds::Toast
+    @color='critical'
+    {{notification
+      after=(action after)
+    }}
+    as |T|>
+    <T.Title>Error!</T.Title>
+    <T.Description>
+      There was an error saving your intention.
+      {{#if (and api.error.status api.error.detail)}}
+        <br />{{api.error.status}}: {{api.error.detail}}
+      {{/if}}
+    </T.Description>
+  </Hds::Toast>
+  {{/if}}
+    </:error>
+
+    <:form as |api|>
+{{#let
+  api.data
+  (not (can 'write intention' item=api.data))
+as |item readonly|}}
+{{#if (not readonly)}}
+
+  {{#let (changeset-get item 'Action') as |newAction|}}
+      <ModalDialog
+        class="consul-intention-action-warn-modal warning"
+        data-test-action-warning
+        @aria={{hash
+          label=(concat "Set intention to " newAction)
+        }}
+      >
+        <:default as |modal|>
+          <Ref @target={{this}} @name="modal" @value={{modal}} />
+        </:default>
+        <:header>
+          <h2>Set intention to {{newAction}}?</h2>
+        </:header>
+        <:body>
+          <p>
+            When you change this Intention to {{newAction}}, you will remove all the Layer 7 policy permissions currently saved to this Intention. Are you sure you want to set it to {{newAction}}?
+          </p>
+        </:body>
+        <:actions as |close|>
+          <Hds::ButtonSet>
+            <Hds::Button
+              data-test-action-warning-confirm
+              @text='Set to {{capitalize newAction}}'
+              @color='critical'
+              {{on 'click' api.submit}}
+            />
+            <Hds::Button
+              data-test-action-warning-cancel
+              @text='No, Cancel'
+              @color='secondary'
+              onclick={{close}}
+            />
+          </Hds::ButtonSet>
+        </:actions>
+      </ModalDialog>
+  {{/let}}
+
+      <DataSource
+        @src={{uri '/${partition}/*/${dc}/services'
+          (hash
+            partition=@partition
+            dc=@dc.Name
+          )
+        }}
+        @onchange={{action this.createServices item}}
+      />
+
+    {{#if (can 'use nspaces')}}
+        <DataSource
+          @src={{uri '/${partition}/*/${dc}/namespaces'
+            (hash
+              partition=@partition
+              dc=@dc.Name
+            )
+          }}
+          @onchange={{action this.createNspaces item}}
+        />
+    {{/if}}
+
+    {{#if (can 'use partitions')}}
+        <DataSource
+          @src={{uri '/*/*/${dc}/partitions'
+            (hash
+              dc=@dc.Name
+            )
+          }}
+          @onchange={{action this.createPartitions item}}
+        />
+    {{/if}}
+
+    {{#if api.isCreate}}
+      {{#if (and (can 'use partitions') (not (can 'choose partitions' dc=@dc)))}}
+        <Hds::Alert @type='inline' class='mb-3 mt-2' as |A|>
+          <A.Title>Cross-partition communication not supported</A.Title>
+          <A.Description>Cross-partition communication is not supported outside of the primary datacenter. You will only be able to select namespaces for source and destination services.</A.Description>
+        </Hds::Alert>
+      {{/if}}
+      {{#if this.isManagedByCRDs}}
+        <Consul::Intention::Notice::CustomResource @type="warning" />
+      {{/if}}
+    {{/if}}
+      <form
+        {{on 'submit' (fn this.submit item api.submit)}}
+      >
+        <Consul::Intention::Form::Fieldsets
+          @nspaces={{this.nspaces}}
+          @dc={{@dc}}
+          @partitions={{this.partitions}}
+          @services={{this.services}}
+          @sourceName={{this.SourceName}}
+          @sourceNS={{this.SourceNS}}
+          @sourcePartition={{this.SourcePartition}}
+          @destinationName={{this.DestinationName}}
+          @destinationNS={{this.DestinationNS}}
+          @destinationPartition={{this.DestinationPartition}}
+          @item={{item}}
+          @disabled={{api.disabled}}
+          @create={{api.isCreate}}
+          @onchange={{api.change}}
+        />
+        <div>
+          <Hds::ButtonSet>
+            <Hds::Button
+              @text='Save'
+              type='submit'
+              disabled={{or item.isInvalid api.disabled}}
+            />
+            <Hds::Button
+              @text='Cancel'
+              @color='secondary'
+              type="reset"
+              disabled={{api.disabled}}
+              {{on 'click' (fn this.oncancel item)}}
+            />
+{{#if (not api.isCreate)}}
+  {{#if (not-eq item.ID 'anonymous') }}
+          <ConfirmationDialog @message="Are you sure you want to delete this Intention?">
+            <:action as |confirm|>
+              <Hds::Button
+                @text='Delete'
+                @color='critical'
+                disabled={{api.disabled}}
+                {{on 'click' confirm}}
+                data-test-delete
+              />
+            </:action>
+            <:dialog as |execute cancel message|>
+              <DeleteConfirmation
+                @message={{message}}
+                @execute={{queue execute api.delete}}
+                @cancel={{cancel}}
+              />
+            </:dialog>
+          </ConfirmationDialog>
+  {{/if}}
+{{/if}}
+          </Hds::ButtonSet>
+        </div>
+      </form>
+  {{else}}
+
+    {{#if item.IsManagedByCRD}}
+      <Hds::Alert @type="inline" class='mb-3 mt-2' as |A|>
+        <A.Title>Intention Custom Resource</A.Title>
+        <A.Description>This Intention is view only because it is managed through an Intention Custom Resource in your Kubernetes cluster.</A.Description>
+        <A.Link::Standalone @text='Learn more about CRDs'
+                            @href="{{env 'CONSUL_DOCS_URL'}}/k8s/crds"
+                            @icon='docs-link'
+                            @iconPosition='trailing' />
+      </Hds::Alert>
+    {{/if}}
+
+    <Consul::Intention::View
+      @item={{item}}
+      data-test-readonly
+    />
+  {{/if}}
+{{/let}}
+
+  </:form>
+</DataForm>
+</div>

@@ -1,0 +1,39 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{yield}}
+{{#let (hash
+  change=(action "change")
+) as |api|}}
+<div
+  class={{class-map
+    (array 'menu-panel')
+    (array 'menu-panel-deprecated')
+    (array @position)
+    (array this.isConfirmation 'confirmation')
+  }}
+  {{did-insert (action 'connect')}}
+>
+  {{#if (has-block "controls")}}
+    {{yield api to="controls"}}
+  {{else}}
+    {{yield api}}
+  {{/if}}
+  
+  {{#if (has-block "header")}}
+    <div>
+      {{yield api to="header"}}
+    </div>
+  {{/if}}
+  
+  <ul role="menu" ...attributes>
+    {{#if (has-block "menu")}}
+      {{yield api to="menu"}}
+    {{else}}
+      {{yield api}}
+    {{/if}}
+  </ul>
+</div>
+{{/let}}

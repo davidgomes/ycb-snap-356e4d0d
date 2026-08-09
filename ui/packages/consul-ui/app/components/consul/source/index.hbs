@@ -1,0 +1,35 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<dl class="tooltip-panel">
+  <dt>
+    <span data-test-consul-source class="consul-source--hds">
+      <Hds::Badge
+        @text={{@source}}
+        @color="neutral"
+        @type="filled"
+        @size="small"
+      />
+    </span>
+  </dt>
+  <dd>
+    <MenuPanel @position="left">
+      <:header>
+        {{t "components.consul.source.header"}}
+      </:header>
+      <:menu>
+        <li role="separator">
+          {{t "components.consul.source.menu-title"}}
+        </li>
+        <li role="none" class="docs-link">
+          <a tabindex="-1" role="menuitem" href="{{env 'CONSUL_DOCS_URL'}}/connect/l7-traffic" rel="noopener noreferrer" target="_blank">
+            {{t "components.consul.source.links.documentation"}}
+          </a>
+        </li>
+      </:menu>
+    </MenuPanel>
+  </dd>
+</dl>
+

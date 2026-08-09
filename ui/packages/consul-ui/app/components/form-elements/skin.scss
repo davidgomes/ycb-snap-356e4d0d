@@ -1,0 +1,40 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%form-element-text-input {
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  box-shadow: var(--token-surface-inset-box-shadow);
+  border-radius: var(--decor-radius-100);
+  border: var(--decor-border-100);
+  outline: none;
+}
+textarea:disabled + .CodeMirror,
+%form-element-text-input:disabled,
+%form-element-text-input:read-only {
+  cursor: not-allowed;
+}
+%form fieldset > p,
+%form-element-note,
+%form-element-text-input::placeholder {
+  color: var(--token-color-foreground-faint);
+}
+%form-element-error > input,
+%form-element-error > textarea {
+  border-color: var(--decor-error, var(--token-color-foreground-critical)) !important;
+}
+%form-element-text-input {
+  color: var(--token-color-foreground-faint);
+  border-color: var(--token-color-palette-neutral-300);
+}
+%form-element-text-input-hover {
+  border-color: var(--token-color-foreground-faint);
+}
+%form-element-text-input-focus {
+  border-color: var(--typo-action, var(--token-color-foreground-action));
+}
+%form-element-label {
+  color: var(--typo-contrast, inherit);
+}

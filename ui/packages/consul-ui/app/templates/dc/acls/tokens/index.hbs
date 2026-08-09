@@ -1,0 +1,138 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader
+    @src={{
+      uri '/${partition}/${nspace}/${dc}/tokens'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+      )}}>
+
+    <:error as |loader|>
+    {{#if (eq loader.error.status '401')}}
+      <Consul::Acl::Disabled />
+    {{else}}
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    {{/if}}
+    </:error>
+
+    <:loaded as |loader|>
+  {{#let
+
+    (hash
+      value=(or this.sortBy "CreateTime:desc")
+      change=(action (mut this.sortBy) value="target.selected")
+    )
+
+    (hash
+      kind=(hash
+        value=(if this.kind (split this.kind ',') undefined)
+        change=(action (mut this.kind) value="target.selectedItems")
+      )
+      searchproperty=(hash
+        value=(if (not-eq this.searchproperty undefined)
+          (split this.searchproperty ',')
+          this.searchProperties
+        )
+        change=(action (mut this.searchproperty) value="target.selectedItems")
+        default=this.searchProperties
+      )
+    )
+
+    loader.data
+
+  as |sort filters items|}}
+
+    <AppView
+      @login={{route.model.app.login.open}}
+      >
+      <:header>
+        <h1>
+          <route.Title @title="Tokens" />
+        </h1>
+      </:header>
+      <:actions>
+  {{#if (can "create tokens")}}
+    <Hds::Button
+      @text='Create'
+      @route='dc.acls.tokens.create'
+      data-test-create
+    />
+  {{/if}}
+      </:actions>
+      <:toolbar>
+    {{#if (gt items.length 0)}}
+        <Consul::Token::SearchBar
+          @search={{this.search}}
+          @onsearch={{action (mut this.search) value="target.value"}}
+
+          @sort={{sort}}
+
+          @filter={{filters}}
+        />
+    {{/if}}
+      </:toolbar>
+      <:content>
+    {{#if (token/is-legacy items)}}
+      <Hds::Alert @type='inline' class='mb-3 mt-3' as |A|>
+        <A.Title>Update</A.Title>
+        <A.Description data-test-notification-update>We have upgraded our ACL System to allow the creation of reusable policies that can be applied to tokens. Read more about the changes and how to upgrade legacy tokens.</A.Description>
+        <A.Link::Standalone @text='Learn more'
+                            @href="{{env 'CONSUL_HOME_URL'}}/consul/tutorials/archive/access-control-token-migration"
+                            @icon='docs-link'
+                            @iconPosition='trailing' />
+      </Hds::Alert>
+    {{/if}}
+        <DataCollection
+          @type="token"
+          @sort={{sort.value}}
+          @filters={{filters}}
+          @search={{this.search}}
+          @items={{items}}
+        as |collection|>
+          <collection.Collection>
+            <Consul::Token::List
+              @items={{collection.items}}
+              @token={{route.model.user.token}}
+              @onuse={{this.onUse}}
+              @ondelete={{this.onDelete}}
+              @onlogout={{this.onLogout}}
+              @onclone={{this.onClone}}
+            />
+          </collection.Collection>
+          <collection.Empty>
+            <EmptyState
+              @login={{route.model.app.login.open}}
+            >
+              <:header>
+                <h2>
+                  {{t 'routes.dc.acls.tokens.index.empty.header'
+                    items=items.length
+                  }}
+                </h2>
+              </:header>
+              <:body>
+                {{t 'routes.dc.acls.tokens.index.empty.body'
+                  items=items.length
+                  htmlSafe=true
+                }}
+              </:body>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+      </:content>
+    </AppView>
+  {{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

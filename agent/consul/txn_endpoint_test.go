@@ -1,0 +1,1544 @@
+// Copyright IBM Corp. 2024, 2026
+// SPDX-License-Identifier: BUSL-1.1
+
+package consul
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	msgpackrpc "github.com/hashicorp/consul-net-rpc/net-rpc-msgpackrpc"
+
+	"github.com/hashicorp/consul/acl"
+	"github.com/hashicorp/consul/agent/structs"
+	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/testrpc"
+	"github.com/hashicorp/consul/types"
+)
+
+var testTxnRules = `
+key "" {
+	policy = "deny"
+}
+key "foo" {
+	policy = "read"
+}
+key "test" {
+	policy = "write"
+}
+key "test/priv" {
+	policy = "read"
+}
+
+service "" {
+	policy = "deny"
+}
+service "foo-svc" {
+	policy = "read"
+}
+service "test-svc" {
+	policy = "write"
+}
+
+node "" {
+	policy = "deny"
+}
+node "foo-node" {
+	policy = "read"
+}
+node "test-node" {
+	policy = "write"
+}
+`
+
+var testNodeID = "9749a7df-fac5-46b4-8078-32a3d96c59f3"
+
+func TestTxn_CheckNotExists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+	dir1, s1 := testServer(t)
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	apply := func(arg *structs.TxnRequest) (*structs.TxnResponse, error) {
+		out := new(structs.TxnResponse)
+		err := msgpackrpc.CallWithCodec(codec, "Txn.Apply", arg, out)
+		return out, err
+	}
+
+	checkKeyNotExists := &structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				KV: &structs.TxnKVOp{
+					Verb:   api.KVCheckNotExists,
+					DirEnt: structs.DirEntry{Key: "test"},
+				},
+			},
+		},
+	}
+
+	createKey := &structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				KV: &structs.TxnKVOp{
+					Verb:   api.KVSet,
+					DirEnt: structs.DirEntry{Key: "test"},
+				},
+			},
+		},
+	}
+
+	if _, err := apply(checkKeyNotExists); err != nil {
+		t.Fatalf("testing for non-existent key failed: %s", err)
+	}
+	if _, err := apply(createKey); err != nil {
+		t.Fatalf("creating new key failed: %s", err)
+	}
+	out, err := apply(checkKeyNotExists)
+	if err != nil || out == nil || len(out.Errors) != 1 || out.Errors[0].Error() != `op 0: key "test" exists` {
+		t.Fatalf("testing for existent key failed: %#v", out)
+	}
+}
+
+func TestTxn_Apply(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+	dir1, s1 := testServer(t)
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Do a super basic request. The state store test covers the details so
+	// we just need to be sure that the transaction is sent correctly and
+	// the results are converted appropriately.
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVSet,
+					DirEnt: structs.DirEntry{
+						Key:   "test",
+						Flags: 42,
+						Value: []byte("test"),
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVGet,
+					DirEnt: structs.DirEntry{
+						Key: "test",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeSet,
+					Node: structs.Node{
+						ID:      types.NodeID(testNodeID),
+						Node:    "foo",
+						Address: "127.0.0.1",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeGet,
+					Node: structs.Node{
+						ID:   types.NodeID(testNodeID),
+						Node: "foo",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceSet,
+					Node: "foo",
+					Service: structs.NodeService{
+						ID:      "svc-foo",
+						Service: "svc-foo",
+						Address: "1.1.1.1",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceGet,
+					Node: "foo",
+					Service: structs.NodeService{
+						ID:      "svc-foo",
+						Service: "svc-foo",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb: api.CheckSet,
+					Check: structs.HealthCheck{
+						Node:    "foo",
+						CheckID: types.CheckID("check-foo"),
+						Name:    "test",
+						Status:  "passing",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb: api.CheckGet,
+					Check: structs.HealthCheck{
+						Node:    "foo",
+						CheckID: types.CheckID("check-foo"),
+						Name:    "test",
+					},
+				},
+			},
+		},
+	}
+	var out structs.TxnResponse
+	if err := msgpackrpc.CallWithCodec(codec, "Txn.Apply", &arg, &out); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(out.Errors) != 0 {
+		t.Fatalf("errs: %v", out.Errors)
+	}
+
+	// Verify the state store directly.
+	state := s1.fsm.State()
+	_, d, err := state.KVSGet(nil, "test", nil)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if d == nil {
+		t.Fatalf("should not be nil")
+	}
+	if d.Flags != 42 ||
+		!bytes.Equal(d.Value, []byte("test")) {
+		t.Fatalf("bad: %v", d)
+	}
+
+	_, n, err := state.GetNode("foo", nil, "")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if n.Node != "foo" || n.Address != "127.0.0.1" {
+		t.Fatalf("bad: %v", err)
+	}
+
+	_, s, err := state.NodeService(nil, "foo", "svc-foo", nil, "")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if s.ID != "svc-foo" || s.Address != "1.1.1.1" {
+		t.Fatalf("bad: %v", err)
+	}
+
+	_, c, err := state.NodeCheck("foo", types.CheckID("check-foo"), nil, "")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if c.CheckID != "check-foo" || c.Status != "passing" || c.Name != "test" {
+		t.Fatalf("bad: %v", err)
+	}
+
+	// Verify the transaction's return value.
+	expected := structs.TxnResponse{
+		Results: structs.TxnResults{
+			&structs.TxnResult{
+				KV: &structs.DirEntry{
+					Key:   "test",
+					Flags: 42,
+					Value: nil,
+					RaftIndex: structs.RaftIndex{
+						CreateIndex: d.CreateIndex,
+						ModifyIndex: d.ModifyIndex,
+					},
+					EnterpriseMeta: d.EnterpriseMeta,
+				},
+			},
+			&structs.TxnResult{
+				KV: &structs.DirEntry{
+					Key:   "test",
+					Flags: 42,
+					Value: []byte("test"),
+					RaftIndex: structs.RaftIndex{
+						CreateIndex: d.CreateIndex,
+						ModifyIndex: d.ModifyIndex,
+					},
+					EnterpriseMeta: d.EnterpriseMeta,
+				},
+			},
+			&structs.TxnResult{
+				Node: n,
+			},
+			&structs.TxnResult{
+				Node: n,
+			},
+			&structs.TxnResult{
+				Service: s,
+			},
+			&structs.TxnResult{
+				Service: s,
+			},
+			&structs.TxnResult{
+				Check: c,
+			},
+			&structs.TxnResult{
+				Check: c,
+			},
+		},
+	}
+	require.Equal(t, expected, out)
+}
+
+func TestTxn_Apply_ACLDeny(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Set up some state to read back.
+	state := s1.fsm.State()
+	d := &structs.DirEntry{
+		Key:   "nope",
+		Value: []byte("hello"),
+	}
+	require.NoError(t, state.KVSSet(1, d))
+
+	node := &structs.Node{
+		ID:   types.NodeID(testNodeID),
+		Node: "nope",
+	}
+	require.NoError(t, state.EnsureNode(2, node))
+
+	svc := structs.NodeService{ID: "nope", Service: "nope", Address: "127.0.0.1"}
+	require.NoError(t, state.EnsureService(3, "nope", &svc))
+
+	check := structs.HealthCheck{Node: "nope", CheckID: types.CheckID("nope")}
+	state.EnsureCheck(4, &check)
+
+	token := createTokenFull(t, rpcClient(t, s1), testTxnRules)
+	id := token.SecretID
+
+	// Set up a transaction where every operation should get blocked due to
+	// ACLs.
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVSet,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVDelete,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVDeleteCAS,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVDeleteTree,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVCAS,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVLock,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVUnlock,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVGet,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVGetTree,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVCheckSession,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVCheckIndex,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVCheckNotExists,
+					DirEnt: structs.DirEntry{
+						Key: "nope",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeGet,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeSet,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeCAS,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeDelete,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeDeleteCAS,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceGet,
+					Node:    "foo-node",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceSet,
+					Node:    "foo-node",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceCAS,
+					Node:    "foo-node",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceDelete,
+					Node:    "foo-node",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceDeleteCAS,
+					Node:    "foo-node",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckGet,
+					Check: check,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckSet,
+					Check: check,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckCAS,
+					Check: check,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckDelete,
+					Check: check,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckDeleteCAS,
+					Check: check,
+				},
+			},
+		},
+		WriteRequest: structs.WriteRequest{
+			Token: id,
+		},
+	}
+	var out structs.TxnResponse
+	if err := s1.RPC(context.Background(), "Txn.Apply", &arg, &out); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Verify the transaction's return value.
+	var outPos int
+	for i, op := range arg.Ops {
+		err := out.Errors[outPos]
+		switch {
+		case op.KV != nil:
+			switch op.KV.Verb {
+			case api.KVGet, api.KVGetTree:
+				// These get filtered but won't result in an error.
+			case api.KVSet, api.KVDelete, api.KVDeleteCAS, api.KVDeleteTree, api.KVCAS, api.KVLock, api.KVUnlock, api.KVCheckNotExists:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceKey, acl.AccessWrite, "nope")
+				outPos++
+			default:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceKey, acl.AccessRead, "nope")
+				outPos++
+			}
+		case op.Node != nil:
+			switch op.Node.Verb {
+			case api.NodeGet:
+				// These get filtered but won't result in an error.
+			case api.NodeSet, api.NodeDelete, api.NodeDeleteCAS, api.NodeCAS:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceNode, acl.AccessWrite, "nope")
+				outPos++
+			default:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceNode, acl.AccessRead, "nope")
+				outPos++
+			}
+		case op.Service != nil:
+			switch op.Service.Verb {
+			case api.ServiceGet:
+				// These get filtered but won't result in an error.
+			case api.ServiceSet, api.ServiceCAS, api.ServiceDelete, api.ServiceDeleteCAS:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceService, acl.AccessWrite, "nope")
+				outPos++
+			default:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceService, acl.AccessRead, "nope")
+				outPos++
+			}
+		case op.Check != nil:
+			switch op.Check.Verb {
+			case api.CheckGet:
+				// These get filtered but won't result in an error.
+			case api.CheckSet, api.CheckCAS, api.CheckDelete, api.CheckDeleteCAS:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceNode, acl.AccessWrite, "nope")
+				outPos++
+			default:
+				require.Equal(t, err.OpIndex, i)
+				acl.RequirePermissionDeniedMessage(t, err.What, token.AccessorID, nil, acl.ResourceNode, acl.AccessRead, "nope")
+				outPos++
+			}
+		}
+	}
+}
+
+func TestTxn_Apply_LockDelay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+	dir1, s1 := testServer(t)
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForTestAgent(t, s1.RPC, "dc1")
+
+	// Create and invalidate a session with a lock.
+	state := s1.fsm.State()
+	if err := state.EnsureNode(1, &structs.Node{Node: "foo", Address: "127.0.0.1"}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	session := &structs.Session{
+		ID:        generateUUID(),
+		Node:      "foo",
+		LockDelay: 50 * time.Millisecond,
+	}
+	if err := state.SessionCreate(2, session); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	id := session.ID
+	d := &structs.DirEntry{
+		Key:     "test",
+		Session: id,
+	}
+	if ok, err := state.KVSLock(3, d); err != nil || !ok {
+		t.Fatalf("err: %v", err)
+	}
+
+	if err := state.SessionDestroy(4, id, nil); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Make a new session that is valid.
+	if err := state.SessionCreate(5, session); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	validID := session.ID
+
+	// Make a lock request via an atomic transaction.
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVLock,
+					DirEnt: structs.DirEntry{
+						Key:     "test",
+						Session: validID,
+					},
+				},
+			},
+		},
+	}
+	{
+		var out structs.TxnResponse
+		if err := msgpackrpc.CallWithCodec(codec, "Txn.Apply", &arg, &out); err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if len(out.Results) != 0 ||
+			len(out.Errors) != 1 ||
+			out.Errors[0].OpIndex != 0 ||
+			!strings.Contains(out.Errors[0].What, "due to lock delay") {
+			t.Fatalf("bad: %v", out)
+		}
+	}
+
+	// Wait for lock-delay.
+	time.Sleep(50 * time.Millisecond)
+
+	// Should acquire.
+	{
+		var out structs.TxnResponse
+		if err := msgpackrpc.CallWithCodec(codec, "Txn.Apply", &arg, &out); err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if len(out.Results) != 1 ||
+			len(out.Errors) != 0 ||
+			out.Results[0].KV.LockIndex != 2 {
+			t.Fatalf("bad: %v", out)
+		}
+	}
+}
+
+func TestTxn_Read(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServer(t)
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Put in a key to read back.
+	state := s1.fsm.State()
+	d := &structs.DirEntry{
+		Key:   "test",
+		Value: []byte("hello"),
+	}
+	if err := state.KVSSet(1, d); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Put in a node/check/service to read back.
+	node := &structs.Node{
+		ID:   types.NodeID(testNodeID),
+		Node: "foo",
+	}
+	require.NoError(t, state.EnsureNode(2, node))
+
+	svc := structs.NodeService{
+		ID:             "svc-foo",
+		Service:        "svc-foo",
+		Address:        "127.0.0.1",
+		EnterpriseMeta: *structs.DefaultEnterpriseMetaInDefaultPartition(),
+	}
+	require.NoError(t, state.EnsureService(3, "foo", &svc))
+
+	check := structs.HealthCheck{
+		Node:           "foo",
+		CheckID:        types.CheckID("check-foo"),
+		EnterpriseMeta: *structs.DefaultEnterpriseMetaInDefaultPartition(),
+	}
+	state.EnsureCheck(4, &check)
+
+	// Do a super basic request. The state store test covers the details so
+	// we just need to be sure that the transaction is sent correctly and
+	// the results are converted appropriately.
+	arg := structs.TxnReadRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			&structs.TxnOp{
+				KV: &structs.TxnKVOp{
+					Verb: api.KVGet,
+					DirEnt: structs.DirEntry{
+						Key: "test",
+					},
+				},
+			},
+			&structs.TxnOp{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeGet,
+					Node: structs.Node{ID: node.ID, Node: node.Node},
+				},
+			},
+			&structs.TxnOp{
+				Service: &structs.TxnServiceOp{
+					Verb:    api.ServiceGet,
+					Node:    "foo",
+					Service: svc,
+				},
+			},
+			&structs.TxnOp{
+				Check: &structs.TxnCheckOp{
+					Verb:  api.CheckGet,
+					Check: check,
+				},
+			},
+		},
+	}
+	var out structs.TxnReadResponse
+	if err := msgpackrpc.CallWithCodec(codec, "Txn.Read", &arg, &out); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Verify the transaction's return value.
+	svc.Weights = &structs.Weights{Passing: 1, Warning: 1}
+	svc.RaftIndex = structs.RaftIndex{CreateIndex: 3, ModifyIndex: 3}
+
+	entMeta := out.Results[0].KV.EnterpriseMeta
+	expected := structs.TxnReadResponse{
+		TxnResponse: structs.TxnResponse{
+			Results: structs.TxnResults{
+				&structs.TxnResult{
+					KV: &structs.DirEntry{
+						Key:   "test",
+						Value: []byte("hello"),
+						RaftIndex: structs.RaftIndex{
+							CreateIndex: 1,
+							ModifyIndex: 1,
+						},
+						EnterpriseMeta: entMeta,
+					},
+				},
+				&structs.TxnResult{
+					Node: node,
+				},
+				&structs.TxnResult{
+					Service: &svc,
+				},
+				&structs.TxnResult{
+					Check: &check,
+				},
+			},
+		},
+		QueryMeta: structs.QueryMeta{
+			KnownLeader: true,
+			Index:       1,
+		},
+	}
+	require.Equal(t, expected, out)
+}
+
+func TestTxn_Read_ACLDeny(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Put in a key to read back.
+	state := s1.fsm.State()
+	d := &structs.DirEntry{
+		Key:   "nope",
+		Value: []byte("hello"),
+	}
+	if err := state.KVSSet(1, d); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Put in a node/check/service to read back.
+	node := &structs.Node{
+		ID:   types.NodeID(testNodeID),
+		Node: "nope",
+	}
+	require.NoError(t, state.EnsureNode(2, node))
+
+	svc := structs.NodeService{ID: "nope", Service: "nope", Address: "127.0.0.1"}
+	require.NoError(t, state.EnsureService(3, "nope", &svc))
+
+	check := structs.HealthCheck{Node: "nope", CheckID: types.CheckID("nope")}
+	state.EnsureCheck(4, &check)
+
+	token := createTokenFull(t, codec, testTxnRules)
+
+	t.Run("simple read operations (results get filtered out)", func(t *testing.T) {
+		arg := structs.TxnReadRequest{
+			Datacenter:   "dc1",
+			QueryOptions: structs.QueryOptions{Token: token.SecretID},
+			Ops: structs.TxnOps{
+				{
+					KV: &structs.TxnKVOp{
+						Verb: api.KVGet,
+						DirEnt: structs.DirEntry{
+							Key: "nope",
+						},
+					},
+				},
+				{
+					KV: &structs.TxnKVOp{
+						Verb: api.KVGetTree,
+						DirEnt: structs.DirEntry{
+							Key: "nope",
+						},
+					},
+				},
+			},
+		}
+
+		var out structs.TxnReadResponse
+		err := msgpackrpc.CallWithCodec(codec, "Txn.Read", &arg, &out)
+		require.NoError(t, err)
+		require.Empty(t, out.Results)
+		require.Empty(t, out.Errors)
+		require.True(t, out.ResultsFilteredByACLs, "ResultsFilteredByACLs should be true")
+	})
+
+	t.Run("complex operations (return permission denied errors)", func(t *testing.T) {
+		arg := structs.TxnReadRequest{
+			Datacenter:   "dc1",
+			QueryOptions: structs.QueryOptions{Token: token.SecretID},
+			Ops: structs.TxnOps{
+				{
+					KV: &structs.TxnKVOp{
+						Verb: api.KVCheckSession,
+						DirEnt: structs.DirEntry{
+							Key: "nope",
+						},
+					},
+				},
+				{
+					KV: &structs.TxnKVOp{
+						Verb: api.KVCheckIndex,
+						DirEnt: structs.DirEntry{
+							Key: "nope",
+						},
+					},
+				},
+			},
+		}
+
+		var out structs.TxnReadResponse
+		err := msgpackrpc.CallWithCodec(codec, "Txn.Read", &arg, &out)
+		require.NoError(t, err)
+		acl.RequirePermissionDeniedMessage(t, out.Errors[0].What, token.AccessorID, nil, acl.ResourceKey, acl.AccessRead, "nope")
+		acl.RequirePermissionDeniedMessage(t, out.Errors[1].What, token.AccessorID, nil, acl.ResourceKey, acl.AccessRead, "nope")
+
+		require.Empty(t, out.Results)
+	})
+}
+
+// TestTxn_Validation works across RW and RO Txn endpoints validating the "preCheck()" operation consistently
+// validates operations provided in the request.
+func TestTxn_Validation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServer(t)
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Each one of these test cases should error as invalid.
+	testCases := []struct {
+		request       structs.TxnReadRequest
+		expectedError string
+	}{
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						KV: &structs.TxnKVOp{
+							Verb: "tick",
+							DirEnt: structs.DirEntry{
+								Key: "nope",
+							},
+						},
+					},
+				},
+			},
+			expectedError: "unknown KV operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						Node: &structs.TxnNodeOp{
+							Verb: "tick",
+						},
+					},
+				},
+			},
+			expectedError: "unknown node operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						Service: &structs.TxnServiceOp{
+							Verb: "tick",
+						},
+					},
+				},
+			},
+			expectedError: "unknown service operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						Check: &structs.TxnCheckOp{
+							Verb: "tick",
+						},
+					},
+				},
+			},
+			expectedError: "unknown check operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						Session: &structs.TxnSessionOp{
+							Verb: "tick",
+						},
+					},
+				},
+			},
+			expectedError: "unknown session operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						Intention: &structs.TxnIntentionOp{ // nolint:staticcheck // SA1019 intentional use of deprecated field
+							Op: "BOOM!",
+						},
+					},
+				},
+			},
+			expectedError: "unknown intention operation",
+		},
+		{
+			request: structs.TxnReadRequest{
+				Datacenter: "dc1",
+				Ops: structs.TxnOps{
+					&structs.TxnOp{
+						// Intentionally Empty
+					},
+				},
+			},
+			expectedError: "unknown operation type",
+		},
+	}
+
+	for _, tc := range testCases {
+		var out structs.TxnReadResponse
+		err := msgpackrpc.CallWithCodec(codec, "Txn.Read", &tc.request, &out)
+		require.NoError(t, err)
+		require.Greater(t, len(out.Errors), 0)
+		require.Contains(t, out.Errors[0].Error(), tc.expectedError)
+	}
+}
+
+func TestTxn_Apply_ServiceSetRejectsServiceNameMismatchForExistingID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	state := s1.fsm.State()
+	require.NoError(t, state.EnsureNode(1, &structs.Node{
+		Node:    "test-node",
+		Address: "127.0.0.1",
+	}))
+
+	require.NoError(t, state.EnsureService(2, "test-node", &structs.NodeService{
+		ID:      "shared-id",
+		Service: "victim-svc",
+		Address: "127.0.0.1",
+	}))
+
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	token := createTokenFull(t, codec, testTxnRules)
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceSet,
+					Node: "test-node",
+					Service: structs.NodeService{
+						ID:      "shared-id",
+						Service: "test-svc",
+						Address: "127.0.0.1",
+					},
+				},
+			},
+		},
+		WriteRequest: structs.WriteRequest{
+			Token: token.SecretID,
+		},
+	}
+
+	var out structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &out))
+	require.Len(t, out.Errors, 1)
+	require.Equal(t, 0, out.Errors[0].OpIndex)
+	require.Contains(t, out.Errors[0].What, `does not match existing service name`)
+}
+
+func TestTxn_Apply_CheckSetAuthorizesResolvedServiceID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	state := s1.fsm.State()
+	require.NoError(t, state.EnsureNode(1, &structs.Node{
+		Node:    "test-node",
+		Address: "127.0.0.1",
+	}))
+
+	require.NoError(t, state.EnsureService(2, "test-node", &structs.NodeService{
+		ID:      "victim-id",
+		Service: "victim-svc",
+		Address: "127.0.0.1",
+	}))
+
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	token := createTokenFull(t, codec, testTxnRules)
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Check: &structs.TxnCheckOp{
+					Verb: api.CheckSet,
+					Check: structs.HealthCheck{
+						Node:        "test-node",
+						CheckID:     types.CheckID("victim-check"),
+						Name:        "victim-check",
+						ServiceID:   "victim-id",
+						ServiceName: "test-svc", // spoofed; must not be trusted
+					},
+				},
+			},
+		},
+		WriteRequest: structs.WriteRequest{
+			Token: token.SecretID,
+		},
+	}
+
+	var out structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &out))
+	require.Len(t, out.Errors, 1)
+	require.Equal(t, 0, out.Errors[0].OpIndex)
+	acl.RequirePermissionDeniedMessage(
+		t,
+		out.Errors[0].What,
+		token.AccessorID,
+		nil,
+		acl.ResourceService,
+		acl.AccessWrite,
+		"victim-svc",
+	)
+}
+
+// TestTxn_Apply_CheckSetSameTxnAsServiceSet is a regression test for a bug
+// where the transaction pre-check rejected a service-level check write whose
+// service was being created earlier in the same atomic transaction. The
+// pre-check looked the service up in committed FSM state, which does not yet
+// contain ops from the in-flight transaction, and returned an
+// "unknown service ID" error. This broke the supported
+// "register node + service + check in one transaction" workflow (covered by
+// api.TestAPI_ClientTxnWrite).
+func TestTxn_Apply_CheckSetSameTxnAsServiceSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	// testTxnRules grants node:write on "test-node" and service:write on
+	// "test-svc". The transaction creates the node, the service, and a
+	// service-level check that binds to the just-created service - all in
+	// one atomic request.
+	token := createTokenFull(t, codec, testTxnRules)
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Node: &structs.TxnNodeOp{
+					Verb: api.NodeSet,
+					Node: structs.Node{
+						Node:    "test-node",
+						Address: "127.0.0.1",
+					},
+				},
+			},
+			{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceSet,
+					Node: "test-node",
+					Service: structs.NodeService{
+						ID:      "test-svc-id",
+						Service: "test-svc",
+						Address: "127.0.0.1",
+						Port:    8080,
+					},
+				},
+			},
+			{
+				Check: &structs.TxnCheckOp{
+					Verb: api.CheckSet,
+					Check: structs.HealthCheck{
+						Node:        "test-node",
+						CheckID:     types.CheckID("test-check"),
+						Name:        "test-check",
+						Status:      api.HealthPassing,
+						ServiceID:   "test-svc-id",
+						ServiceName: "test-svc",
+					},
+				},
+			},
+		},
+		WriteRequest: structs.WriteRequest{
+			Token: token.SecretID,
+		},
+	}
+
+	var out structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &out))
+	require.Empty(t, out.Errors, "transaction should succeed; got errors: %+v", out.Errors)
+	require.Len(t, out.Results, 3)
+
+	// Confirm the check is bound to the real service in state.
+	_, gotCheck, err := s1.fsm.State().NodeCheck("test-node", types.CheckID("test-check"), nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, gotCheck)
+	require.Equal(t, "test-svc-id", gotCheck.ServiceID)
+	require.Equal(t, "test-svc", gotCheck.ServiceName)
+}
+
+// TestTxn_Apply_CheckSetUnknownServiceIDEmptyName verifies the safety guard
+// in vetCheckWrite: when a service-level check op references a ServiceID that
+// does not exist in committed state and is not being created in the same
+// transaction, and the caller omits ServiceName, the op is rejected. This
+// prevents the same-txn-create fallback from being used to bypass ACLs by
+// supplying an empty service name (which most authorizers do not match).
+func TestTxn_Apply_CheckSetUnknownServiceIDEmptyName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	// Pre-create the node so the only failure point is the check op.
+	require.NoError(t, s1.fsm.State().EnsureNode(1, &structs.Node{
+		Node:    "test-node",
+		Address: "127.0.0.1",
+	}))
+
+	codec := rpcClient(t, s1)
+	defer codec.Close()
+
+	token := createTokenFull(t, codec, testTxnRules)
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Check: &structs.TxnCheckOp{
+					Verb: api.CheckSet,
+					Check: structs.HealthCheck{
+						Node:    "test-node",
+						CheckID: types.CheckID("ghost-check"),
+						Name:    "ghost-check",
+						// Service-level check (ServiceID set) but the
+						// service does not exist and ServiceName is empty.
+						ServiceID:   "ghost-id",
+						ServiceName: "",
+					},
+				},
+			},
+		},
+		WriteRequest: structs.WriteRequest{
+			Token: token.SecretID,
+		},
+	}
+
+	var out structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &out))
+	require.Len(t, out.Errors, 1)
+	require.Equal(t, 0, out.Errors[0].OpIndex)
+	require.Contains(t, out.Errors[0].What, "unknown service ID")
+}
+func TestTxn_Apply_ServiceSet_NoTokenConsulNameDoesNotOverwriteExistingService(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	state := s1.fsm.State()
+	require.NoError(t, state.EnsureNode(1, &structs.Node{
+		Node:    "victim-node",
+		Address: "127.0.0.1",
+	}))
+
+	require.NoError(t, state.EnsureService(2, "victim-node", &structs.NodeService{
+		ID:      "victim-id",
+		Service: "victim-service",
+		Address: "127.0.0.1",
+		Port:    9000,
+	}))
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceSet,
+					Node: "victim-node",
+					Service: structs.NodeService{
+						ID:      "victim-id",
+						Service: "consul",
+						Address: "198.51.100.7",
+						Port:    8443,
+					},
+				},
+			},
+		},
+		// Intentionally no token.
+	}
+
+	var txnResp structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &txnResp))
+	require.Len(t, txnResp.Errors, 1)
+	require.Contains(t, txnResp.Errors[0].What, "does not match existing service name")
+
+	_, svc, err := state.NodeService(nil, "victim-node", "victim-id", nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+	require.Equal(t, "victim-service", svc.Service)
+	require.Equal(t, "127.0.0.1", svc.Address)
+	require.Equal(t, 9000, svc.Port)
+}
+
+func TestTxn_Apply_ServiceDelete_NoTokenConsulNameDoesNotDeleteExistingService(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	state := s1.fsm.State()
+	require.NoError(t, state.EnsureNode(1, &structs.Node{
+		Node:    "victim-node",
+		Address: "127.0.0.1",
+	}))
+
+	require.NoError(t, state.EnsureService(2, "victim-node", &structs.NodeService{
+		ID:      "victim-id",
+		Service: "victim-service",
+		Address: "127.0.0.1",
+	}))
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceDelete,
+					Node: "victim-node",
+					Service: structs.NodeService{
+						ID:      "victim-id",
+						Service: "consul",
+					},
+				},
+			},
+		},
+		// Intentionally no token.
+	}
+
+	var txnResp structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &txnResp))
+	require.Len(t, txnResp.Errors, 1)
+	require.Contains(t, txnResp.Errors[0].What, "does not match existing service name")
+
+	_, svc, err := state.NodeService(nil, "victim-node", "victim-id", nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+	require.Equal(t, "victim-service", svc.Service)
+}
+
+func TestTxn_Apply_ServiceSet_NoTokenCannotWriteConsulService(t *testing.T) {
+	if testing.Short() {
+		t.Skip("too slow for testing.Short")
+	}
+
+	t.Parallel()
+
+	dir1, s1 := testServerWithConfig(t, func(c *Config) {
+		c.PrimaryDatacenter = "dc1"
+		c.ACLsEnabled = true
+		c.ACLInitialManagementToken = "root"
+		c.ACLResolverSettings.ACLDefaultPolicy = "deny"
+	})
+	defer os.RemoveAll(dir1)
+	defer s1.Shutdown()
+
+	testrpc.WaitForLeader(t, s1.RPC, "dc1")
+
+	state := s1.fsm.State()
+	require.NoError(t, state.EnsureNode(1, &structs.Node{
+		Node:    "victim-node",
+		Address: "127.0.0.1",
+	}))
+
+	require.NoError(t, state.EnsureService(2, "victim-node", &structs.NodeService{
+		ID:      "consul-id",
+		Service: "consul",
+		Address: "127.0.0.1",
+		Port:    8300,
+	}))
+
+	arg := structs.TxnRequest{
+		Datacenter: "dc1",
+		Ops: structs.TxnOps{
+			{
+				Service: &structs.TxnServiceOp{
+					Verb: api.ServiceSet,
+					Node: "victim-node",
+					Service: structs.NodeService{
+						ID:      "consul-id",
+						Service: "consul",
+						Address: "198.51.100.7",
+						Port:    8443,
+					},
+				},
+			},
+		},
+		// Intentionally no token.
+	}
+
+	var txnResp structs.TxnResponse
+	require.NoError(t, s1.RPC(context.Background(), "Txn.Apply", &arg, &txnResp))
+	require.Len(t, txnResp.Errors, 1)
+
+	_, svc, err := state.NodeService(nil, "victim-node", "consul-id", nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+	require.Equal(t, "consul", svc.Service)
+	require.Equal(t, "127.0.0.1", svc.Address)
+	require.Equal(t, 8300, svc.Port)
+}

@@ -1,0 +1,20 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.tag-list,
+td.tags {
+  @extend %tag-list;
+}
+%tag-list {
+  @extend %horizontal-kv-list;
+}
+%tag-list dt::before {
+  @extend %with-tag-mask, %as-pseudo;
+  color: inherit;
+  color: var(--token-color-foreground-faint);
+}
+%tag-list dd {
+  @extend %csv-list;
+}

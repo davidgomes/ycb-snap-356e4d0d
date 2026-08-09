@@ -1,0 +1,85 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%informed-action {
+  & {
+    border-radius: var(--decor-radius-200);
+    border: var(--decor-border-100);
+    border-color: var(--token-color-palette-neutral-300);
+    background-color: var(--token-color-surface-primary);
+  }
+  > div {
+    border-top-left-radius: var(--decor-radius-200);
+    border-top-right-radius: var(--decor-radius-200);
+    cursor: default;
+  }
+  header {
+    @extend %display-100-semibold;
+  }
+  header > * {
+    @extend %typo-inherit;
+  }
+  p {
+    @extend %body-100-regular;
+    color: var(--token-color-hashicorp-brand);
+  }
+  > ul {
+    list-style: none;
+  }
+  > ul > li > *:hover,
+  > ul > li > *:focus {
+    background-color: var(--token-color-surface-strong);
+  }
+  /* variants */
+  &.info {
+    header {
+      color: var(--token-color-foreground-action-active);
+    }
+    header::before {
+      @extend %with-info-circle-fill-mask, %as-pseudo;
+      background-color: var(--token-color-foreground-action);
+      margin-right: 5px;
+    }
+    > div {
+      background-color: var(--token-color-surface-action);
+    }
+  }
+  &.dangerous {
+    header {
+      color: var(--token-color-palette-red-400);
+    }
+    header::before {
+      @extend %with-alert-triangle-mask, %as-pseudo;
+      background-color: var(--token-color-foreground-critical);
+    }
+    > div {
+      background-color: var(--token-color-surface-critical);
+    }
+  }
+  &.warning {
+    header {
+      color: var(--token-color-foreground-warning-on-surface);
+    }
+    header::before {
+      @extend %with-alert-triangle-mask, %as-pseudo;
+      background-color: var(--token-color-vault-brand);
+      margin-right: 5px;
+    }
+    > div {
+      background-color: var(--token-color-vault-gradient-faint-start);
+    }
+  }
+  /**/
+  > ul > .action > * {
+    color: var(--token-color-foreground-action);
+  }
+  > ul > .dangerous > * {
+    @extend %frame-red-300;
+  }
+  > ul > .dangerous > *:hover,
+  > ul > .dangerous > *:focus {
+    @extend %frame-red-700;
+  }
+}

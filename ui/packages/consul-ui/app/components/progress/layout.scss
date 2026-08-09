@@ -1,0 +1,14 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%progress-native {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+%progress-native::-webkit-progress-bar,
+%progress-native::-webkit-progress-value {
+  display: none;
+}

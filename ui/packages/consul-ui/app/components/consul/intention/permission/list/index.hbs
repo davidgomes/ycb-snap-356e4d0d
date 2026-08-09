@@ -1,0 +1,80 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#if (gt @items.length 0)}}
+<ListCollection
+  class="consul-intention-permission-list{{if (not @onclick) ' readonly'}}"
+  @scroll="native"
+  @items={{@items}}
+  @showActions={{if @onclick true false}}
+  @partial={{5}}>
+  <:details as |item|>
+    <div onclick={{action (optional @onclick) item}}>
+      <Consul::Intention::Action @action={{item.Action}} @label={{capitalize (or item.Action 'App aware')}} />
+{{#if (gt item.HTTP.Methods.length 0)}}
+        <dl class="permission-methods">
+          <dt {{hds-tooltip "Methods" options=(detached-tooltip-options)}}>
+            Methods
+          </dt>
+          <dd>
+{{#each item.HTTP.Methods as |item|}}
+            {{item}}
+{{/each}}
+          </dd>
+        </dl>
+{{/if}}
+{{#if item.HTTP.Path}}
+        <dl class="permission-path">
+          <dt {{hds-tooltip item.HTTP.PathType options=(detached-tooltip-options)}}>
+            {{item.HTTP.PathType}}
+          </dt>
+          <dd>
+            {{item.HTTP.Path}}
+          </dd>
+        </dl>
+{{/if}}
+{{#each item.HTTP.Header as |item|}}
+        <dl class="permission-header">
+          <dt {{hds-tooltip "Header" options=(detached-tooltip-options)}}>
+            Header
+          </dt>
+          <dd>
+            {{item.Name}} {{route-match item}}
+          </dd>
+        </dl>
+{{/each}}
+    </div>
+  </:details>
+  <:actions as |item index Actions|>
+    <Actions as |Action|>
+      <Action data-test-edit-action @onclick={{action (optional @onclick) item}} @close={{true}}>
+        <:label>
+          Edit
+        </:label>
+      </Action>
+      <Action data-test-delete-action @onclick={{action (optional @ondelete) item}} class="dangerous">
+        <:label>
+          Delete
+        </:label>
+        <:confirmation as |Confirmation|>
+          <Confirmation class="warning">
+            <:header>
+              Confirm delete
+            </:header>
+            <:body>
+              <p>
+                Are you sure you want to delete this permission?
+              </p>
+            </:body>
+            <:confirm as |Confirm|>
+              <Confirm>Delete</Confirm>
+            </:confirm>
+          </Confirmation>
+        </:confirmation>
+      </Action>
+    </Actions>
+  </:actions>
+</ListCollection>
+{{/if}}

@@ -1,0 +1,16 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+
+.informed-action {
+  @extend %informed-action;
+}
+%informed-action {
+  & > ul > li > * {
+    @extend %internal-button;
+  }
+}

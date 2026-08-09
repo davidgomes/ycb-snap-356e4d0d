@@ -1,0 +1,25 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import Component from '@ember/component';
+
+export default Component.extend({
+  tagName: '',
+  didInsertElement: function () {
+    this._super(...arguments);
+    const component = this;
+    this.chart.addGuard(this.name, function () {
+      if (typeof component.cond === 'function') {
+        return component.cond(...arguments);
+      } else {
+        return component.cond;
+      }
+    });
+  },
+  willDestroyElement: function () {
+    this._super(...arguments);
+    this.chart.removeGuard(this.name);
+  },
+});

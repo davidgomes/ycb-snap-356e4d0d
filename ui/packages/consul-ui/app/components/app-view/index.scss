@@ -1,0 +1,72 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+
+.app-view {
+  @extend %app-view;
+  position: relative;
+}
+
+%app-view > header {
+  @extend %app-view-header;
+}
+%app-view-header .title {
+  @extend %app-view-title;
+}
+%app-view-title .title-left-container {
+  @extend %app-view-title-left-container;
+}
+%app-view-header .actions {
+  @extend %app-view-actions;
+}
+%app-view > div {
+  @extend %app-view-content;
+}
+
+%app-view-actions a {
+  @extend %button-compact;
+}
+
+/* toggleable toolbar for short  screens */
+[for='toolbar-toggle'] {
+  @extend %with-search-color-icon;
+  background-position: 0 4px;
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  color: var(--token-color-foreground-action);
+}
+#toolbar-toggle {
+  display: none;
+}
+@media #{$--lt-spacious-page-header} {
+  %app-view-actions {
+    margin-top: 9px;
+  }
+}
+// reduced search magnifying icon layout
+@media #{$--horizontal-selects} {
+  [for='toolbar-toggle'] {
+    display: none;
+  }
+}
+@media #{$--lt-horizontal-selects} {
+  %app-view-header h1 {
+    display: inline-block;
+  }
+  // on the instance detail page we don't have the magnifier
+  html[data-route$='dc.services.instance.show'] h1 {
+    display: block;
+  }
+  #toolbar-toggle + * {
+    display: none;
+  }
+  #toolbar-toggle:checked + * {
+    display: flex;
+  }
+}

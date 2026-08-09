@@ -1,0 +1,44 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<InformedAction
+  class="confirmation-alert warning"
+  ...attributes
+>
+  <:header>
+    {{#if (has-block "header")}}
+      {{yield to="header"}}
+    {{else}}
+      {{yield}}
+    {{/if}}
+  </:header>
+  <:body>
+    {{#if (has-block "body")}}
+      {{yield to="body"}}
+    {{else}}
+      {{yield}}
+    {{/if}}
+  </:body>
+  <:actions as |Actions|>
+    <Actions.Action class="dangerous">
+      {{#if (has-block "confirm")}}
+        {{yield 
+          (component 'action'
+            onclick=(action @onclick)
+            tabindex="-1"
+          )
+          to="confirm"
+        }}
+      {{else}}
+        {{yield}}
+      {{/if}}
+    </Actions.Action>
+    <Actions.Action>
+      <Action @for={{@name}}>
+        Cancel
+      </Action>
+    </Actions.Action>
+  </:actions>
+</InformedAction>

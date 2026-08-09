@@ -1,0 +1,15 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+// TODO: Need to make all these headers capital case
+export const HEADERS_PARTITION = 'X-Consul-Partition';
+export const HEADERS_NAMESPACE = 'X-Consul-Namespace';
+export const HEADERS_DATACENTER = 'X-Consul-Datacenter';
+export const HEADERS_DEFAULT_ACL_POLICY = 'X-Consul-Default-Acl-Policy';
+export const HEADERS_INDEX = 'X-Consul-Index';
+export const HEADERS_TOKEN = 'X-Consul-Token';
+export const HEADERS_DIGEST = 'X-Consul-ContentHash';
+//
+export const HEADERS_SYMBOL = '__consul_ui_http_headers__';

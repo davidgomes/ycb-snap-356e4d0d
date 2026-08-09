@@ -1,0 +1,74 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<a
+  class="route-card"
+  onclick={{@onclick}}
+  id={{@item.ID}}
+  ...attributes
+>
+  <header class={{if (eq this.path.value '/') 'short'}}>
+{{#if (gt @item.Definition.Match.HTTP.Methods.length 0) }}
+    <ul class="match-methods">
+      {{#each @item.Definition.Match.HTTP.Methods as |item|}}
+        <li>
+          <span class="route-card__method-badge">
+            <Hds::Badge
+              @text={{item}}
+              @color="neutral"
+              @type="filled"
+              @size="small"
+            />
+          </span>
+        </li>
+      {{/each}}
+    </ul>
+{{/if}}
+    <dl>
+      <dt>
+        {{this.path.type}}
+      </dt>
+      <dd>
+        {{this.path.value}}
+      </dd>
+    </dl>
+  </header>
+{{#if (gt @item.Definition.Match.HTTP.Header.length 0) }}
+  <section class="match-headers">
+    {{!-- template-lint-disable no-duplicate-landmark-elements --}}
+    <header {{hds-tooltip 'Header' options=(detached-tooltip-options)}}>
+      <h4>Headers</h4>
+    </header>
+    <dl>
+  {{#each @item.Definition.Match.HTTP.Header as |item|}}
+      <dt>
+        {{item.Name}}
+      </dt>
+      <dd>
+        {{route-match item}}
+      </dd>
+  {{/each}}
+    </dl>
+  </section>
+{{/if}}
+{{#if (gt @item.Definition.Match.HTTP.QueryParam.length 0) }}
+  <section class="match-queryparams">
+    {{!-- template-lint-disable no-duplicate-landmark-elements --}}
+    <header {{hds-tooltip 'Query Params' options=(detached-tooltip-options)}}>
+      <h4>Query Params</h4>
+    </header>
+    <dl>
+  {{#each @item.Definition.Match.HTTP.QueryParam as |item|}}
+      <dt>
+        {{item.Name}}
+      </dt>
+      <dd>
+        {{route-match item}}
+      </dd>
+  {{/each}}
+    </dl>
+  </section>
+{{/if}}
+</a>

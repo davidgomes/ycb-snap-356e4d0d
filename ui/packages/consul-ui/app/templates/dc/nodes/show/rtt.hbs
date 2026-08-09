@@ -1,0 +1,40 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+{{#let
+  route.model.tomography
+as |tomography|}}
+ {{#if (gt tomography.distances.length 0)}}
+  <div class="tab-section">
+    <div class="definition-table">
+      <dl>
+          <dt>
+              Minimum
+          </dt>
+          <dd>
+              {{format-number tomography.min maximumFractionDigits=2}}ms
+          </dd>
+          <dt>
+              Median
+          </dt>
+          <dd>
+              {{format-number tomography.median maximumFractionDigits=2}}ms
+          </dd>
+          <dt>
+              Maximum
+          </dt>
+          <dd>
+              {{format-number tomography.max maximumFractionDigits=2}}ms
+          </dd>
+      </dl>
+    </div>
+    <Consul::Tomography::Graph @distances={{tomography.distances}} />
+  </div>
+{{/if}}
+{{/let}}
+</Route>

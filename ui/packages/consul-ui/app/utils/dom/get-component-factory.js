@@ -1,0 +1,14 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+export default function (owner, key = '-view-registry:main') {
+  const components = owner.lookup(key);
+  return function (el) {
+    const id = el.getAttribute('id');
+    if (!id) return null;
+    const comp = components[id];
+    return comp === undefined ? null : comp;
+  };
+}

@@ -1,0 +1,47 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%inline-alert {
+  font-style: normal;
+  font-weight: var(--token-typography-font-weight-regular);
+}
+%inline-alert-success,
+%inline-alert-info,
+%inline-alert-error,
+%inline-alert-warning {
+  @extend %inline-alert;
+}
+%inline-alert {
+  color: inherit;
+}
+%inline-alert-error {
+  color: var(--token-color-foreground-critical);
+}
+%inline-alert::before {
+  @extend %body-200-regular;
+}
+%inline-alert::before {
+  @extend %as-pseudo;
+}
+%inline-alert-success::before {
+  @extend %with-check-circle-fill-mask;
+  color: var(--token-color-foreground-success);
+}
+%inline-alert-error::before {
+  @extend %with-cancel-square-fill-mask;
+  color: var(--token-color-foreground-critical);
+}
+%inline-alert-warning::before {
+  @extend %with-alert-triangle-mask;
+  color: var(--token-color-foreground-warning);
+  /* the warning triangle always looks */
+  /* too low just because its a triangle */
+  /* this tweak make it look better */
+  margin-top: -9px;
+}
+%inline-alert-info::before {
+  @extend %with-info-circle-fill-mask;
+  color: var(--token-color-foreground-action);
+}

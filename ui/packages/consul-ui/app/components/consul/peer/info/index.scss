@@ -1,0 +1,18 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.consul-peer-info {
+  background: var(--token-color-surface-faint);
+  color: var(--token-color-foreground-faint);
+  padding: 0px 8px;
+  border-radius: 2px;
+
+  display: flex;
+  align-items: center;
+
+  .consul-peer-info__description {
+    margin-left: 4px;
+  }
+}

@@ -1,0 +1,62 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Hds::Card::Container
+  @level="mid"
+  @levelHover="high"
+  @levelActive="mid"
+  @hasBorder={{true}}
+  @overflow="hidden"
+  class={{class-map
+    'consul-server-card'
+    (array 'consul-server-card--leader' (eq @item.Status 'leader'))
+    (array 'consul-server-card--voter' (and (not @item.ReadReplica) (eq @item.Status 'voter')))
+    (array 'consul-server-card--non-voter' (or @item.ReadReplica (includes @item.Status (array 'non-voter' 'staging'))))
+  }}
+  ...attributes
+>
+  <a href={{@href}} class="consul-server-card__link" data-test-server-link>
+
+    {{#if (eq @item.Status 'leader')}}
+      <span class="consul-server-card__leader-tile" {{hds-tooltip "Leader" options=(detached-tooltip-options)}}>
+        <Hds::Icon @name="star-fill" @size="16" @color="var(--token-color-consul-brand)" />
+      </span>
+    {{/if}}
+
+    <div class="consul-server-card__content">
+      <p class="consul-server-card__name">
+        {{@item.Name}}
+      </p>
+
+      {{#if (eq @item.Status 'leader')}}
+        <Hds::Badge
+          @text="Active voter"
+          @icon={{if @item.Healthy "check" "x"}}
+          @color={{if @item.Healthy "success" "critical"}}
+          @type="filled"
+          @size="small"
+        />
+      {{else if (and (not @item.ReadReplica) (eq @item.Status 'voter'))}}
+        <Hds::Badge
+          @text="Active voter"
+          @icon={{if @item.Healthy "check" "x"}}
+          @color={{if @item.Healthy "success" "critical"}}
+          @type="filled"
+          @size="small"
+        />
+      {{else}}
+        <Hds::Badge
+          @text="Backup voter"
+          @icon={{if @item.Healthy "check" "x"}}
+          @color="neutral"
+          @type="filled"
+          @size="small"
+        />
+      {{/if}}
+    </div>
+
+  </a>
+</Hds::Card::Container>
+

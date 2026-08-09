@@ -1,0 +1,89 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route @name={{this.routeName}} as |route|>
+  {{#let
+    (filter (action 'syntheticNodeSearchPropertyFilter' route.model.item) this.searchProperties)
+    as |filteredSearchProperties|
+  }}
+    {{#let
+      (hash value=(or this.sortBy 'Status:asc') change=(action (mut this.sortBy) value='target.selected'))
+      (hash
+        status=(hash
+          value=(if this.status (split this.status ',') undefined)
+          change=(action (mut this.status) value='target.selectedItems')
+        )
+        check=(hash
+          value=(if this.check (split this.check ',') undefined)
+          change=(action (mut this.check) value='target.selectedItems')
+        )
+        searchproperty=(hash
+          value=(if
+            (not-eq this.searchproperty undefined) (split this.searchproperty ',') filteredSearchProperties
+          )
+          change=(action (mut this.searchproperty) value='target.selectedItems')
+          default=filteredSearchProperties
+        )
+      )
+      (filter
+        (action 'syntheticNodeHealthCheckFilter' route.model.item)
+        (merge-checks
+          (array route.model.item.Checks route.model.proxy.Checks)
+          route.model.proxy.ServiceProxy.Expose.Checks
+        )
+      )
+      as |sort filters items|
+    }}
+      <div class='tab-section'>
+
+        {{#if (gt items.length 0)}}
+          <input type='checkbox' id='toolbar-toggle' />
+          <Consul::HealthCheck::SearchBar
+            @search={{this.search}}
+            @onsearch={{action (mut this.search) value='target.value'}}
+            @sort={{sort}}
+            @filter={{filters}}
+          />
+        {{/if}}
+
+        {{#let (find-by 'Type' 'serf' items) as |serf|}}
+          {{#if (and serf (eq serf.Status 'critical'))}}
+            <Hds::Alert @type="inline" @color="warning" class="mb-3 mt-2" data-test-critical-serf-notice as |A|>
+              <A.Title>{{t 'routes.dc.services.instance.healthchecks.critical-serf-notice.header'}}</A.Title>
+              <A.Description>{{t
+                'routes.dc.services.instance.healthchecks.critical-serf-notice.body'
+                htmlSafe=true
+              }}</A.Description>
+            </Hds::Alert>
+          {{/if}}
+        {{/let}}
+        <DataCollection
+          @type='health-check'
+          @sort={{sort.value}}
+          @filters={{filters}}
+          @search={{this.search}}
+          @items={{items}}
+          as |collection|
+        >
+          <collection.Collection>
+            <Consul::HealthCheck::List @items={{collection.items}} />
+          </collection.Collection>
+          <collection.Empty>
+            <EmptyState>
+              <:body>
+                {{t
+                  'routes.dc.services.instance.healthchecks.empty'
+                  items=items.length
+                  htmlSafe=true
+                }}
+              </:body>
+            </EmptyState>
+          </collection.Empty>
+        </DataCollection>
+
+      </div>
+    {{/let}}
+  {{/let}}
+</Route>

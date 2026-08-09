@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!--
+ Copyright IBM Corp. 2024, 2026
+ SPDX-License-Identifier: BUSL-1.1
+-->
+
+<html class="{{content-for "root-class"}}">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Consul</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{content-for "head"}}
+    {{content-for "test-head"}}
+
+    {{content-for "head-footer"}}
+    {{content-for "test-head-footer"}}
+  </head>
+  <body>
+    {{content-for "body"}}
+    {{content-for "test-body"}}
+
+    <div id="qunit"></div>
+    <div id="qunit-fixture">
+      <div id="ember-testing-container">
+        <div id="ember-testing"></div>
+      </div>
+    </div>
+
+    <script src="/testem.js" integrity="" data-embroider-ignore></script>
+
+    {{content-for "body-footer"}}
+    {{content-for "test-body-footer"}}
+  </body>
+</html>

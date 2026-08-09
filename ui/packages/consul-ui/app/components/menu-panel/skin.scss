@@ -1,0 +1,36 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%menu-panel-button-selected::after {
+  @extend %with-check-plain-mask, %as-pseudo;
+}
+%menu-panel-header {
+  @extend %body-100-regular;
+}
+%menu-panel-header + ul {
+  border-top: var(--decor-border-100);
+  border-color: var(--token-form--base-border-color-default);
+}
+/* if the first item is a separator and it */
+/* contains text don't add a line */
+%menu-panel-separator:first-child:not(:empty) {
+  border: none;
+}
+%menu-panel-separator {
+  @extend %body-100-medium;
+  text-transform: uppercase;
+  color: var(--token-color-foreground-faint);
+}
+%menu-panel-item {
+  list-style-type: none;
+}
+%menu-panel-badge {
+  @extend %pill;
+  color: var(--token-color-surface-primary);
+  background-color: var(--token-color-foreground-faint);
+}
+%menu-panel-body .informed-action {
+  border: 0 !important;
+}

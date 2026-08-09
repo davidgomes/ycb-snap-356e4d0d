@@ -1,0 +1,62 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader @src={{
+    uri '/${partition}/${nspace}/${dc}/namespace/${id}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        id=(or route.params.name '')
+      )
+    }}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+
+  route.params.dc
+  route.params.partition
+  route.params.nspace
+
+  loader.data
+  loader.data.isNew
+as |dc partition nspace item create|}}
+  <AppView>
+    <:breadcrumbs>
+      <Hds::Breadcrumb>
+        <Hds::Breadcrumb::Item @text="All Namespaces" @route="dc.nspaces" @model={{route.params.dc}} data-test-back />
+      </Hds::Breadcrumb>
+    </:breadcrumbs>
+    <:header>
+      <h1>
+        <route.Title @title={{if create "New Namespace" (concat "Edit " item.Name)}} />
+      </h1>
+    </:header>
+    <:actions>
+    </:actions>
+    <:content>
+      <Consul::Nspace::Form
+        @item={{item}}
+        @dc={{route.params.dc}}
+        @nspace={{route.params.nspace}}
+        @partition={{route.params.partition}}
+        @onsubmit={{transition-to 'dc.nspaces.index'}}
+      />
+    </:content>
+  </AppView>
+{{/let}}
+    </:loaded>
+  </DataLoader>
+</Route>

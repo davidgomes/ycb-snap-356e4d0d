@@ -1,0 +1,26 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.consul-intention-fieldsets {
+  [role='radiogroup'] {
+    overflow: visible !important;
+    display: grid;
+    grid-gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(270px, auto));
+  }
+  .radio-card {
+    @extend %radio-card-with-icon;
+  }
+  .radio-card header > * {
+    display: inline;
+  }
+  .permissions > button {
+    @extend %anchor, %body-100-regular;
+    float: right;
+  }
+}
+.consul-intention-permission-modal [role='dialog'] {
+  width: 100%;
+}
