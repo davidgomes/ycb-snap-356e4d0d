@@ -454,7 +454,7 @@ class TestNvmeofCLICommandSuccessMessage:
 
         result_plain = NvmeofCLICommand.COMMANDS[test_cmd].call(
             MagicMock(),
-            {"format": "plain"}
+            {"format": "plain", "a": "unused"}
         )
         assert isinstance(result_plain, HandleCommandResult)
         assert result_plain.retval == 0
@@ -484,7 +484,10 @@ class TestNvmeofCLICommandSuccessMessage:
         def set_log_level(self, a: str):
             return {"a": "b"}
 
-        result_default = NvmeofCLICommand.COMMANDS[test_cmd].call(MagicMock(), {})
+        result_default = NvmeofCLICommand.COMMANDS[test_cmd].call(
+            MagicMock(),
+            {"a": "unused"}
+        )
         assert isinstance(result_default, HandleCommandResult)
         assert result_default.retval == 0
         assert result_default.stdout == (
