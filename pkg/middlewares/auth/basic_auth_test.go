@@ -212,6 +212,96 @@ func TestBasicAuthHeaderPresent(t *testing.T) {
 	assert.Equal(t, "traefik\n", string(body))
 }
 
+func TestBasicAuthSingleflightKeyCollision(t *testing.T) {
+	secret := "$2a$04$.8sTYfcxbSplCtoxt5TdJOgpBYkarKtZYsYfYxQ1edbYRuO1DNi0e"
+	attackerUser := "attacker"
+	attackerPassword := "test" + secret
+
+	var mu sync.Mutex
+	var forwardedUsers []string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		if r.URL.User != nil {
+			forwardedUsers = append(forwardedUsers, r.URL.User.Username())
+		}
+		mu.Unlock()
+		fmt.Fprintln(w, "traefik")
+	})
+
+	auth := dynamic.BasicAuth{
+		Users: []string{"test:" + secret},
+	}
+	authMiddleware, err := NewBasic(t.Context(), next, auth, "authName")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+	req.SetBasicAuth(attackerUser, attackerPassword)
+	rw := httptest.NewRecorder()
+	authMiddleware.ServeHTTP(rw, req)
+	assert.Equal(t, http.StatusUnauthorized, rw.Code)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	attackerLookedUp := make(chan struct{})
+	ba := authMiddleware.(*basicAuth)
+	origSecrets := ba.auth.Secrets
+	ba.auth.Secrets = func(user, realm string) string {
+		s := origSecrets(user, realm)
+		if user == attackerUser {
+			select {
+			case <-attackerLookedUp:
+			default:
+				close(attackerLookedUp)
+			}
+		}
+		return s
+	}
+	ba.checkSecret = func(password, hash string) bool {
+		match := password == "test" && hash == secret
+		if match {
+			close(started)
+			<-release
+		}
+		return match
+	}
+
+	var validStatus, attackerStatus int
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+		req.SetBasicAuth("test", "test")
+		rw := httptest.NewRecorder()
+		authMiddleware.ServeHTTP(rw, req)
+		validStatus = rw.Code
+	}()
+
+	<-started
+
+	go func() {
+		defer wg.Done()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+		req.SetBasicAuth(attackerUser, attackerPassword)
+		rw := httptest.NewRecorder()
+		authMiddleware.ServeHTTP(rw, req)
+		attackerStatus = rw.Code
+	}()
+
+	<-attackerLookedUp
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	assert.Equal(t, http.StatusOK, validStatus)
+	assert.Equal(t, http.StatusUnauthorized, attackerStatus)
+
+	mu.Lock()
+	assert.Equal(t, []string{"test"}, forwardedUsers)
+	mu.Unlock()
+}
+
 func TestBasicAuthConcurrentHashOnce(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "traefik")
