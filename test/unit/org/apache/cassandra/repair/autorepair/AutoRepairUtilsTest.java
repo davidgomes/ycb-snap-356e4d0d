@@ -19,6 +19,10 @@
 package org.apache.cassandra.repair.autorepair;
 
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -44,11 +48,14 @@ import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UUIDType;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.repair.autorepair.AutoRepairConfig.RepairType;
 import org.apache.cassandra.repair.autorepair.AutoRepairUtils.AutoRepairHistory;
 import org.apache.cassandra.repair.autorepair.AutoRepairUtils.CurrentRepairStatus;
+import org.apache.cassandra.service.StorageService;
 
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -351,6 +358,50 @@ public class AutoRepairUtilsTest extends CQLTester
 
         boolean result = AutoRepairUtils.hasMultipleLiveMajorVersions();
         assertTrue(result);
+    }
+
+    @Test
+    public void testGetMostEligibleHostToRepairWhenOtherReplicaHasOngoingRepair() throws UnknownHostException
+    {
+        DatabaseDescriptor.getAutoRepairConfig().setAllowParallelReplicaRepair(repairType, false);
+        DatabaseDescriptor.getAutoRepairConfig().setParallelRepairCount(repairType, 2);
+
+        InetAddressAndPort otherEndpoint = InetAddressAndPort.getByName("127.0.0.2");
+        UUID otherHostId = UUID.randomUUID();
+        TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata();
+        Collection<Token> existingLocalTokens = tokenMetadata.isMember(localEndpoint)
+                                                ? new ArrayList<>(tokenMetadata.getTokens(localEndpoint))
+                                                : Collections.emptyList();
+        UUID existingLocalHostId = tokenMetadata.getHostId(localEndpoint);
+
+        try
+        {
+            if (!tokenMetadata.isMember(localEndpoint))
+                tokenMetadata.updateNormalToken(DatabaseDescriptor.getPartitioner().getRandomToken(), localEndpoint);
+            tokenMetadata.updateHostId(hostId, localEndpoint);
+            tokenMetadata.updateNormalToken(DatabaseDescriptor.getPartitioner().getRandomToken(), otherEndpoint);
+            tokenMetadata.updateHostId(otherHostId, otherEndpoint);
+
+            long now = System.currentTimeMillis();
+            // Local host finished repair; the other registered host still has an ongoing repair.
+            AutoRepairHistory localFinished = new AutoRepairHistory(hostId, null, now - 200, now - 100, null, 0, false);
+            AutoRepairHistory otherOngoing = new AutoRepairHistory(otherHostId, null, now, now - 50, null, 0, false);
+            CurrentRepairStatus status = new CurrentRepairStatus(Arrays.asList(localFinished, otherOngoing),
+                                                                 Collections.emptySet(), hostId);
+
+            AutoRepairHistory selected = AutoRepairUtils.getMostEligibleHostToRepair(repairType, status, hostId);
+
+            assertNotNull(selected);
+            assertEquals(hostId, selected.hostId);
+        }
+        finally
+        {
+            tokenMetadata.removeEndpoint(otherEndpoint);
+            if (!existingLocalTokens.isEmpty())
+                tokenMetadata.updateNormalTokens(existingLocalTokens, localEndpoint);
+            if (existingLocalHostId != null)
+                tokenMetadata.updateHostId(existingLocalHostId, localEndpoint);
+        }
     }
 
     @Test

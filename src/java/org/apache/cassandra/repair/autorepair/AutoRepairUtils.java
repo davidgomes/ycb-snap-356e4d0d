@@ -78,6 +78,7 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.metrics.AutoRepairMetricsManager;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
@@ -731,14 +732,18 @@ public class AutoRepairUtils
             return true;
         }
 
+        // Use a stable TokenMetadata copy. getRangeAddresses/getAddressReplicas consult topology,
+        // which TokenMetadata.getTopology() forbids on the live StorageService singleton.
+        TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata().cloneOnlyTokenMap();
+
         // For each replication strategy, determine if host being repaired is a replica of the local node.
         for (Map.Entry<AbstractReplicationStrategy, List<String>> entry : replicationStrategies.entrySet())
         {
             AbstractReplicationStrategy replicationStrategy = entry.getKey();
-            EndpointsByRange endpointsByRange = replicationStrategy.getRangeAddresses(StorageService.instance.getTokenMetadata());
+            EndpointsByRange endpointsByRange = replicationStrategy.getRangeAddresses(tokenMetadata);
 
             // get ranges of the eligible address for the given replication strategy.
-            RangesAtEndpoint rangesAtEndpoint = StorageService.instance.getReplicas(replicationStrategy, eligibleBroadcastAddress);
+            RangesAtEndpoint rangesAtEndpoint = replicationStrategy.getAddressReplicas(tokenMetadata, eligibleBroadcastAddress);
             for (Replica replica : rangesAtEndpoint)
             {
                 // get the endpoints involved in this range.
