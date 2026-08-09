@@ -2173,7 +2173,19 @@ query_outputs_are_not_nullable(Query *query)
 			 * "var IS NOT NULL" or similarly strict condition among the quals
 			 * on non-outerjoined-rels.  Compute the list of Vars having such
 			 * quals if we didn't already.
+			 *
+			 * This fallback is only valid for Vars of the sub-select's own
+			 * level.  find_nonnullable_vars() reports only level-zero Vars,
+			 * and the multibitmapset it returns identifies them by varno and
+			 * varattno alone, so an upper-level Var would be matched against
+			 * a local Var of an unrelated relation that happens to have the
+			 * same varno and varattno.  expr_is_nonnullable() already
+			 * declines upper-level Vars, and we have no access to the outer
+			 * query here, so there is nothing else to try for them.
 			 */
+			if (var->varlevelsup != 0)
+				return false;
+
 			if (!computed_nonnullable_vars)
 			{
 				find_subquery_safe_quals((Node *) query->jointree, &safe_quals);

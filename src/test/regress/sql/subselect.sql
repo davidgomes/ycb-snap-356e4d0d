@@ -1691,6 +1691,25 @@ EXPLAIN (COSTS OFF)
 SELECT * FROM not_null_tab
 WHERE (id, val) NOT IN (SELECT t1.id, t2.id FROM not_null_tab t1, null_tab t2);
 
+-- No ANTI JOIN: the sub-select's output is an upper-level Var, which a qual
+-- on a local Var must not prove non-nullable.  The column numbers matter
+-- here: t1.val and t2.val share varno/varattno, so a naive lookup in the
+-- subquery's nonnullable-vars set would wrongly treat t1.val as non-null.
+CREATE TEMP TABLE corr_outer (id int, val int);
+CREATE TEMP TABLE corr_inner (id int, val int);
+INSERT INTO corr_outer VALUES (NULL, NULL);
+INSERT INTO corr_inner VALUES (1, 1);
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM corr_outer t1
+WHERE COALESCE(t1.id, -1) NOT IN
+    (SELECT t1.val FROM corr_inner t2 WHERE t2.val IS NOT NULL);
+
+-- NOT IN with a NULL upper-level Var on the inner side should return no rows
+SELECT * FROM corr_outer t1
+WHERE COALESCE(t1.id, -1) NOT IN
+    (SELECT t1.val FROM corr_inner t2 WHERE t2.val IS NOT NULL);
+
 -- ANTI JOIN: COALESCE(nullable, constant) is non-nullable
 EXPLAIN (COSTS OFF)
 SELECT * FROM null_tab
