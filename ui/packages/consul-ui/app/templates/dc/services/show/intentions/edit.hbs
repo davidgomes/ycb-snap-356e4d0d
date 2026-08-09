@@ -1,0 +1,48 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+{{#let
+  (not (can "write intention for service" item=route.model.item.Service))
+as |readOnly|}}
+  <DataLoader @src={{
+    uri '/${partition}/${nspace}/${dc}/intention/${id}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        id=(or route.params.intention_id '')
+      )
+    }}>
+
+    <:error as |loader|>
+        <ErrorState
+          @error={{loader.error}}
+          @login={{route.model.app.login.open}}
+        />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+  loader.data
+as |item|}}
+        <Consul::Intention::Form
+          @readonly={{readOnly}}
+          @item={{item}}
+          @dc={{route.model.dc}}
+          @nspace={{route.params.nspace}}
+          @partition={{route.params.partition}}
+          @autofill={{hash
+            DestinationName=route.params.name
+          }}
+          @onsubmit={{transition-to 'dc.services.show.intentions.index'}}
+        />
+{{/let}}
+  </:loaded>
+</DataLoader>
+{{/let}}
+</Route>

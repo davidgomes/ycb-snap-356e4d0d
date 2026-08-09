@@ -1,0 +1,23 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%expanded-single-select {
+  border: var(--decor-border-100);
+  border-color: var(--token-color-palette-neutral-300);
+  border-radius: var(--decor-radius-100);
+}
+%expanded-single-select label {
+  cursor: pointer;
+}
+%expanded-single-select input[type='radio']:checked + *,
+%expanded-single-select input[type='radio']:hover + *,
+%expanded-single-select input[type='radio']:focus + * {
+  box-shadow: var(--token-elevation-high-box-shadow);
+}
+%expanded-single-select input[type='radio']:checked + *,
+%expanded-single-select input[type='radio']:hover + *,
+%expanded-single-select input[type='radio']:focus + * {
+  background-color: var(--token-color-surface-primary);
+}

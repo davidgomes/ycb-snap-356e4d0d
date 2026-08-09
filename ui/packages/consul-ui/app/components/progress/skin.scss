@@ -1,0 +1,17 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%progress-indeterminate {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --icon-size: icon-700; /* 24px */
+  --icon-name: var(--icon-loading);
+  --icon-color: var(--token-color-foreground-faint);
+}
+%progress-indeterminate::before {
+  content: '';
+}

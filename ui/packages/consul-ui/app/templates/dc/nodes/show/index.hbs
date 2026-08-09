@@ -1,0 +1,14 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  {{#if (eq route.model.item.Checks.length 0)}}
+    {{did-insert-helper this.goServices}}
+  {{else}}
+    {{did-insert-helper this.goHealthChecks}}
+  {{/if}}
+</Route>

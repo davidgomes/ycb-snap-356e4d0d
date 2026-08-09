@@ -1,0 +1,24 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.topology-metrics-status-error,
+.topology-metrics-status-loader {
+  @extend %body-200-regular;
+  color: var(--token-color-foreground-faint);
+  text-align: center;
+  margin: 0 auto !important;
+  display: block;
+
+  span::before {
+    @extend %with-info-circle-outline-mask, %as-pseudo;
+    background-color: var(--token-color-foreground-faint);
+  }
+}
+
+span.topology-metrics-status-loader::after {
+  --icon-name: var(--icon-loading);
+  content: '';
+  margin-left: 0.5rem; /* 8px */
+}

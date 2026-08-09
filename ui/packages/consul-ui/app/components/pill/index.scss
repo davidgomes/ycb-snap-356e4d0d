@@ -1,0 +1,24 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+.leader,
+.topology-metrics-source-type,
+.consul-transparent-proxy {
+  @extend %pill-200, %frame-gray-600;
+}
+%pill::before {
+  --icon-size: icon-300;
+}
+%pill.leader::before {
+  @extend %with-star-outline-mask, %as-pseudo;
+}
+%pill.jwt::before {
+  @extend %with-logo-jwt-color-icon, %as-pseudo;
+}
+%pill.oidc::before {
+  @extend %with-logo-oidc-color-icon, %as-pseudo;
+}

@@ -1,0 +1,115 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+
+a {
+  text-decoration: none;
+}
+td,
+th,
+span,
+strong {
+  color: inherit;
+}
+/* %typo-body */
+body {
+  color: var(--token-color-foreground-strong);
+}
+/* TODO: Consider changing this to 'p a, dd a, td a' etc etc */
+a {
+  color: var(--token-color-foreground-action);
+}
+html {
+  background-color: var(--token-color-surface-primary);
+}
+hr {
+  background-color: var(--token-color-surface-interactive-active);
+}
+html {
+  font-size: 16px;
+}
+
+body,
+input,
+select,
+textarea {
+  font-family: var(--token-typography-font-stack-text);
+}
+code,
+pre {
+  font-family: var(--token-typography-font-stack-code);
+}
+strong {
+  font-style: inherit;
+  @extend %body-200-semibold;
+}
+html {
+  text-rendering: optimizeLegibility;
+  text-size-adjust: 100%;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+}
+code,
+pre {
+  -moz-osx-font-smoothing: auto;
+  -webkit-font-smoothing: auto;
+}
+
+pre {
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  white-space: pre;
+  word-wrap: normal;
+}
+html {
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+html {
+  box-sizing: border-box;
+}
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+fieldset {
+  border: none;
+  width: 100%;
+}
+a,
+input[type='checkbox'],
+input[type='radio'] {
+  cursor: pointer;
+}
+hr {
+  border: none;
+  display: block;
+}
+input[type='checkbox'],
+input[type='radio'] {
+  vertical-align: baseline;
+}
+td,
+th {
+  text-align: left;
+  vertical-align: top;
+}
+html {
+  min-width: 300px;
+}
+hr {
+  height: 1px;
+  margin: 1.5rem 0;
+}
+
+button,
+input:where([type='button']),
+input:where([type='reset']),
+input:where([type='submit']) {
+  -webkit-appearance: button; /* 1 */
+  background-color: transparent; /* 2 */
+  background-image: none; /* 2 */
+}

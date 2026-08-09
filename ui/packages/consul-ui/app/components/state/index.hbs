@@ -1,0 +1,10 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{did-insert-helper this.attributeChanged @state @matches @notMatches}}
+{{did-update-helper this.attributeChanged @state @matches @notMatches}}
+{{#if this.render}}
+  {{yield}}
+{{/if}}

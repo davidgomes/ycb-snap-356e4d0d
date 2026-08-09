@@ -1,0 +1,9 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+export default ({ properties }) =>
+  (key = 'Name:asc') => {
+    return properties(['Name', 'CreateIndex'])(key);
+  };

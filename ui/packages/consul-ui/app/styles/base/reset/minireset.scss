@@ -1,0 +1,55 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+html,
+body,
+p,
+ol,
+ul,
+li,
+dl,
+dt,
+dd,
+blockquote,
+figure,
+fieldset,
+legend,
+textarea,
+iframe,
+hr {
+  @extend %reset-box;
+}
+
+ul {
+  @extend %reset-list;
+}
+table {
+  @extend %reset-table;
+}
+img,
+embed,
+object,
+audio,
+video {
+  @extend %responsive-media;
+}
+button,
+input,
+select,
+textarea {
+  margin: 0;
+}
+iframe {
+  border: 0;
+}
+article,
+aside,
+figure,
+footer,
+header,
+hgroup,
+section {
+  display: block;
+}

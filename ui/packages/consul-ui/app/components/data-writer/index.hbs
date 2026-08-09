@@ -1,0 +1,110 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<StateChart @src={{this.chart}} as |State Guard Action dispatch state|>
+
+  <Ref @target={{this}} @name="dispatch" @value={{dispatch}} />
+
+{{#let (hash
+  data=this.data
+  error=this.error
+  persist=(action "persist")
+  delete=(queue (action (mut this.data)) (action dispatch "REMOVE"))
+  inflight=(state-matches state (array "persisting" "removing"))
+  disabled=(state-matches state (array "persisting" "removing"))
+) as |api|}}
+
+  {{yield api}}
+
+  <State @matches="removing">
+    <DataSink
+      @sink={{@sink}}
+      @item={{this.data}}
+      @data={{null}}
+      @onchange={{action dispatch "SUCCESS"}}
+      @onerror={{action "error"}}
+    />
+  </State>
+
+  <State @matches="persisting">
+    <DataSink
+      @sink={{@sink}}
+      @item={{this.data}}
+      @onchange={{action dispatch "SUCCESS"}}
+      @onerror={{action "error"}}
+    />
+  </State>
+
+  <State @matches="removed">
+{{#let
+  (queue (action dispatch "RESET") (action this.ondelete))
+as |after|}}
+    {{#if (has-block "removed")}}
+      {{yield after to="removed"}}
+    {{else}}
+      <Hds::Toast
+        @color='success'
+        {{notification
+          after=(action after)
+        }} as |T|>
+        <T.Title>Success!</T.Title>
+        <T.Description>Your {{or @label @type}} has been deleted.</T.Description>
+      </Hds::Toast>
+    {{/if}}
+{{/let}}
+  </State>
+
+  <State @matches="persisted">
+{{#let
+  (action this.onchange)
+as |after|}}
+    {{#if (has-block "persisted")}}
+      {{yield after to="persisted"}}
+    {{else}}
+      <Hds::Toast
+        @color='success'
+        {{notification
+          after=(action after)
+        }} as |T|>
+        <T.Title>Success!</T.Title>
+        <T.Description>Your {{or @label @type}} has been saved.</T.Description>
+      </Hds::Toast>
+    {{/if}}
+{{/let}}
+  </State>
+
+  <State @matches="error">
+{{#let
+  (action dispatch "RESET")
+as |after|}}
+    {{#if (has-block "error")}}
+      {{yield after api.error api to="error"}}
+    {{else}}
+      <Hds::Toast
+        @color='critical'
+        {{notification
+          after=(action after)
+        }} as |T|>
+        <T.Title>Error!</T.Title>
+        <T.Description>There was an error saving your {{or @label @type}}.
+          {{#if (and api.error.status api.error.detail)}}
+            <br />{{api.error.status}}: {{api.error.detail}}
+          {{else if api.error.message}}
+            <br />{{api.error.message}}
+          {{/if}}
+        </T.Description>
+      </Hds::Toast>
+    {{/if}}
+{{/let}}
+  </State>
+
+  {{#if (has-block "content")}}
+    {{yield api to="content"}}
+  {{else}}
+    {{yield api}}
+  {{/if}}
+
+{{/let}}
+</StateChart>

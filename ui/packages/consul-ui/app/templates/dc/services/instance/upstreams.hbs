@@ -1,0 +1,94 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <div class="tab-section">
+  {{#let
+
+    (hash
+      value=(or this.sortBy "DestinationName:asc")
+      change=(action (mut this.sortBy) value="target.selected")
+    )
+
+    (hash
+      searchproperty=(hash
+        value=(if (not-eq this.searchproperty undefined)
+          (split this.searchproperty ',')
+          this.searchProperties
+        )
+        change=(action (mut this.searchproperty) value="target.selectedItems")
+        default=this.searchProperties
+      )
+    )
+
+    (or route.params.partition route.model.user.token.Partition 'default')
+    (or route.params.nspace route.model.user.token.Namespace 'default')
+    route.params.dc
+
+    route.model.proxy
+    route.model.meta
+    route.model.proxy.Service.Proxy.Upstreams
+
+  as |sort filters partition nspace dc proxy meta items|}}
+      {{#if (gt items.length 0)}}
+        <input type="checkbox" id="toolbar-toggle" />
+        <Consul::UpstreamInstance::SearchBar
+          @search={{this.search}}
+          @onsearch={{action (mut this.search) value="target.value"}}
+          @searchproperties={{this.searchProperties}}
+
+          @sort={{sort}}
+
+          @filter={{filters}}
+        />
+      {{/if}}
+      {{! TODO: Looks like we can get this straight from item.Proxy.Mode }}
+      {{! the less we need `proxy` and `meta` the better }}
+      {{#if (eq meta.ServiceProxy.Mode 'transparent')}}
+        <Hds::Alert @type="inline" @color="warning" class="mb-3 mt-2" as |A|>
+          <A.Title>{{t "routes.dc.services.instance.upstreams.tproxy-mode.header"}}</A.Title>
+          <A.Description>
+            {{t "routes.dc.services.instance.upstreams.tproxy-mode.body"}}
+          </A.Description>
+          <A.Link::Standalone
+            @text={{t "routes.dc.services.instance.upstreams.tproxy-mode.footer.text"}}
+            @href='{{concat (env 'CONSUL_DOCS_URL') (t "routes.dc.services.instance.upstreams.tproxy-mode.footer.link")}}'
+            @icon="docs-link"
+            @iconPosition="trailing"
+            @size="small"
+          />
+        </Hds::Alert>
+      {{/if}}
+      <DataCollection
+        @type="upstream-instance"
+        @sort={{sort.value}}
+        @filters={{filters}}
+        @search={{this.search}}
+        @items={{items}}
+      as |collection|>
+        <collection.Collection>
+          <Consul::UpstreamInstance::List
+            @items={{collection.items}}
+            @dc={{dc}}
+            @nspace={{nspace}}
+            @partition={{partition}}
+          />
+        </collection.Collection>
+        <collection.Empty>
+          <EmptyState>
+            <:body>
+              {{t "routes.dc.services.instance.upstreams.empty"
+                items=items.length
+                htmlSafe=true
+              }}
+            </:body>
+          </EmptyState>
+        </collection.Empty>
+      </DataCollection>
+  {{/let}}
+  </div>
+</Route>

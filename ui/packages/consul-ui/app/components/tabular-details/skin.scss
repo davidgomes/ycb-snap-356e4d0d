@@ -1,0 +1,37 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%tabular-details-toggle-button::before {
+  @extend %with-chevron-down-icon, %as-pseudo;
+}
+%tabular-details td:only-child {
+  cursor: default;
+  border: 0;
+}
+%tabular-detail {
+  border: 1px solid var(--token-color-palette-neutral-300);
+  border-radius: var(--decor-radius-100);
+  box-shadow: var(--token-surface-high-box-shadow);
+  margin-bottom: 20px;
+}
+%tabular-detail::before,
+%tabular-detail > div,
+%tabular-detail > label {
+  background-color: var(--token-color-surface-primary);
+}
+%tabular-detail > label::before {
+  transform: rotate(180deg);
+}
+// this is here as its a fake border
+%tabular-detail::before {
+  background: var(--token-color-surface-interactive-active);
+  content: '';
+  display: block;
+  height: 1px;
+  position: absolute;
+  bottom: -20px;
+  left: 10px;
+  width: calc(100% - 20px);
+}

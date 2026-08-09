@@ -1,0 +1,21 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#let
+  (dom-guid)
+as |id|}}
+{{#if (or
+    (and (eq @auto undefined) @disclosure.expanded)
+    (and (not-eq @auto undefined) (eq @auto false))
+  )
+}}
+{{yield (hash
+  id=id
+  expanded=@disclosure.expanded
+)}}
+{{/if}}
+{{did-insert-helper (fn @disclosure.add id)}}
+{{will-destroy-helper (fn @disclosure.remove id)}}
+{{/let}}

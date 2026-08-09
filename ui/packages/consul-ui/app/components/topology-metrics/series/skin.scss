@@ -1,0 +1,104 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+#metrics-container .sparkline-wrapper {
+  svg path {
+    stroke-width: 0;
+  }
+
+  .tooltip {
+    @extend %body-200-regular;
+    padding: 0 0 10px;
+    border: 1px solid var(--token-color-palette-neutral-300);
+    background: #fff;
+    border-radius: 2px;
+    box-sizing: border-box;
+    box-shadow: var(--token-elevation-higher-box-shadow);
+
+    .sparkline-time {
+      @extend %body-200-semibold;
+      padding: 8px 10px;
+      color: #000;
+      border-bottom: 1px solid var(--token-color-surface-interactive-active);
+      margin-bottom: 4px;
+      text-align: center;
+    }
+
+    .sparkline-tt-legend,
+    .sparkline-tt-sum {
+      border: 0;
+      padding: 3px 10px 0 10px;
+    }
+
+    .sparkline-tt-sum {
+      border-top: 1px solid var(--token-color-surface-interactive-active);
+      margin-top: 4px;
+      padding: 8px 10px 0 10px;
+    }
+
+    .sparkline-tt-legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      margin: 0 5px 0 0;
+      padding: 0;
+    }
+
+    .sparkline-tt-legend-value,
+    .sparkline-tt-sum-value {
+      float: right;
+    }
+  }
+
+  div.tooltip:before {
+    content: '';
+    display: block;
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    left: 15px;
+    bottom: -7px;
+    border: 1px solid var(--token-color-palette-neutral-300);
+    border-top: 0;
+    border-left: 0;
+    background: #fff;
+    transform: rotate(45deg);
+  }
+}
+
+// Key modal
+.sparkline-key {
+  h3::before {
+    @extend %with-info-circle-fill-mask, %as-pseudo;
+    margin: 2px 3px 0 0;
+    font-size: var(--token-typography-body-200-font-size);
+  }
+
+  h3 {
+    @extend %display-300-semibold;
+    color: var(--token-color-foreground-strong);
+  }
+
+  .sparkline-key-content {
+    dt {
+      font-weight: var(--token-typography-font-weight-semibold);
+    }
+    dd {
+      color: var(--token-color-foreground-faint);
+    }
+  }
+}
+
+.sparkline-key-link {
+  color: var(--token-color-foreground-faint);
+}
+.sparkline-key-link:hover {
+  color: var(--token-color-foreground-action);
+}
+#metrics-container:hover .sparkline-key-link::before {
+  @extend %with-info-circle-fill-mask, %as-pseudo;
+  margin: 1px 3px 0 0;
+  font-size: 12px;
+}

@@ -1,0 +1,26 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+div.with-confirmation {
+  @extend %confirmation-dialog, %confirmation-dialog-inline;
+}
+table td > div.with-confirmation.confirming {
+  position: absolute;
+  right: 0;
+}
+@media #{$--lt-wide-form} {
+  %confirmation-dialog {
+    float: none;
+    margin-top: 1em;
+  }
+  %confirmation-dialog-inline {
+    display: block;
+  }
+  %confirmation-dialog-inline p {
+    margin-bottom: 1em;
+  }
+}

@@ -1,0 +1,26 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import domClosest from 'consul-ui/utils/dom/closest';
+import { module, skip, test } from 'qunit';
+import sinon from 'sinon';
+
+module('Unit | Utility | dom/closest', function () {
+  test('it calls Element.closest with the specified selector', function (assert) {
+    const el = {
+      closest: sinon.stub().returnsArg(0),
+    };
+    const expected = 'selector';
+    const actual = domClosest(expected, el);
+    assert.strictEqual(actual, expected);
+    assert.ok(el.closest.calledOnce);
+  });
+  test("it fails silently/null if calling closest doesn't work/exist", function (assert) {
+    const expected = null;
+    const actual = domClosest('selector', {});
+    assert.strictEqual(actual, expected);
+  });
+  skip('polyfill closest');
+});

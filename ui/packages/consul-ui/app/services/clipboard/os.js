@@ -1,0 +1,14 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import Service from '@ember/service';
+
+import Clipboard from 'clipboard';
+
+export default class OsService extends Service {
+  execute() {
+    return new Clipboard(...arguments);
+  }
+}

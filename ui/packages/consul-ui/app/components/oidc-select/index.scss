@@ -1,0 +1,18 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './skin';
+@import './layout';
+%oidc-select label {
+  @extend %form-element;
+}
+
+%oidc-select button.reset {
+  @extend %anchor;
+  @extend %body-100-regular;
+}
+.oidc-select {
+  @extend %oidc-select;
+}

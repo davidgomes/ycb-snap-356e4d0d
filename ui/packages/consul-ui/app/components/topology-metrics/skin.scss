@@ -1,0 +1,105 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.topology-notices {
+  button {
+    @extend %button;
+    color: var(--token-color-foreground-action);
+  }
+  button::before {
+    @extend %as-pseudo;
+    @extend %with-chevron-down-mask;
+  }
+  button[aria-expanded='true']::before {
+    @extend %with-chevron-up-mask;
+  }
+}
+.topology-container {
+  color: var(--token-color-foreground-faint);
+}
+
+// Columns/Containers & Lines
+#downstream-container,
+#metrics-container,
+#upstream-container {
+  border-radius: var(--decor-radius-100);
+  border: 1px solid;
+  /* TODO: If this color is combined with the above */
+  /* border property then the compressor removes the color */
+  border-color: var(--token-color-surface-interactive-active);
+}
+#downstream-container,
+#upstream-container {
+  background-color: var(--token-color-surface-strong);
+}
+#downstream-container > div:first-child {
+  display: inline-flex;
+  span::before {
+    @extend %with-info-circle-outline-mask, %as-pseudo;
+    background-color: var(--token-color-foreground-faint);
+  }
+}
+
+// Metrics Container
+#metrics-container {
+  div:first-child {
+    background-color: var(--token-color-surface-primary);
+  }
+  .link {
+    background-color: var(--token-color-surface-strong);
+    a {
+      color: var(--token-color-foreground-faint);
+    }
+    a::before {
+      background-color: var(--token-color-foreground-faint);
+    }
+    a:hover {
+      color: var(--token-color-foreground-action);
+    }
+    .metrics-link::before {
+      @extend %with-exit-mask, %as-pseudo;
+    }
+    .config-link::before {
+      @extend %with-docs-mask, %as-pseudo;
+    }
+  }
+}
+
+// SVG Line styling
+#downstream-lines svg,
+#upstream-lines svg {
+  path {
+    fill: transparent;
+  }
+  circle {
+    fill: var(--token-color-surface-primary);
+  }
+  .allow-arrow {
+    fill: var(--token-color-palette-neutral-300);
+    stroke-linejoin: round;
+  }
+  path,
+  .allow-dot,
+  .allow-arrow {
+    stroke: var(--token-color-palette-neutral-300);
+    stroke-width: 2;
+  }
+  path[data-permission='not-defined'],
+  path[data-permission='empty'] {
+    stroke-dasharray: 4;
+  }
+  path[data-permission='deny'] {
+    stroke: var(--token-color-foreground-critical);
+  }
+  .deny-dot {
+    stroke: var(--token-color-foreground-critical);
+    stroke-width: 2;
+  }
+  .deny-arrow {
+    fill: var(--token-color-foreground-critical);
+    stroke: var(--token-color-foreground-critical);
+    stroke-linejoin: round;
+  }
+}

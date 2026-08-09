@@ -1,0 +1,101 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+  <DataLoader
+  @src={{uri 'settings://consul:client'}}>
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+  (or loader.data (hash
+      blocking=true
+    )
+  )
+as |item|}}
+  <AppView>
+    <:header>
+      <h1>
+        <route.Title @title="Settings" />
+      </h1>
+    </:header>
+    <:content>
+      <Hds::Alert @type="inline" class='mb-3 mt-2' as |A|>
+        <A.Title>Local Storage</A.Title>
+        <A.Description>These settings are immediately saved to local storage and persisted through browser usage.</A.Description>
+      </Hds::Alert>
+
+      <DataSource
+        @src={{uri "settings://consul:token"}}
+        @onchange={{action (mut this.token) value="data"}}
+        @onerror={{action (mut this.error) value="error"}}
+      />
+      {{#if this.error}}
+        <Hds::Alert @type="inline" @color="highlight" class="mb-3 mt-2" @icon="token" as |A|>
+          <A.Title>Error loading token</A.Title>
+          <A.Description>
+            {{this.error.message}}
+          </A.Description>
+        </Hds::Alert>
+      {{/if}}
+      {{#if this.token}}
+        <Hds::Alert @type="inline" @color="highlight" class="mb-3 mt-2" @icon="token" as |A|>
+          <A.Title>Your Access Token</A.Title>
+          <A.Description>
+          <Hds::Form::MaskedInput::Field readonly @isContentMasked={{false}} @hasCopyButton={{true}} @value={{this.token.AccessorID}} as |F|>
+            <F.Label>Accessor ID</F.Label>
+          </Hds::Form::MaskedInput::Field>
+          <Hds::Form::MaskedInput::Field readonly @hasCopyButton={{true}} @value={{this.token.SecretID}} as |F|>
+            <F.Label>Secret ID</F.Label>
+          </Hds::Form::MaskedInput::Field>
+          </A.Description>
+        </Hds::Alert>
+      {{/if}}
+
+      <form>
+      {{#if (not (env 'CONSUL_UI_DISABLE_REALTIME'))}}
+      <Disclosure as |disclosure|>
+        <disclosure.Details>
+          <DataSink
+            @data={{item}}
+            @sink='settings://consul:client'
+            @onchange={{action disclosure.close}}
+          />
+        </disclosure.Details>
+        <fieldset data-test-blocking-queries>
+          <h2>Blocking Queries</h2>
+          <p>Keep catalog info up-to-date without refreshing the page. Any changes made to services, nodes and intentions would be reflected in real time.</p>
+          <div class="type-toggle">
+            <label>
+              <input
+                {{on 'change' (queue
+                  (set item 'blocking' (not item.blocking))
+                  disclosure.open
+                )}}
+                type="checkbox"
+                name="client[blocking]"
+                checked={{if item.blocking 'checked'}}
+              />
+              <span>{{if item.blocking 'On' 'Off'}}</span>
+            </label>
+          </div>
+        </fieldset>
+      </Disclosure>
+      {{/if}}
+      </form>
+    </:content>
+  </AppView>
+{{/let}}
+  </:loaded>
+</DataLoader>
+</Route>

@@ -1,0 +1,22 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%toggle-button {
+  border-radius: var(--decor-radius-100);
+  cursor: pointer;
+}
+%toggle-button-intent {
+  background-color: var(--token-color-surface-strong);
+}
+%toggle-button-active {
+  background-color: var(--token-color-surface-strong);
+}
+%toggle-button:hover,
+%toggle-button:focus {
+  @extend %toggle-button-intent;
+}
+%toggle-button:active {
+  @extend %toggle-button-active;
+}

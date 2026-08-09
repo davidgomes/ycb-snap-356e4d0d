@@ -1,0 +1,43 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<FormInput
+  class="option-input type-select"
+  ...attributes
+  @item={{@item}}
+  @placeholder={{@placeholder}}
+  @name={{@name}}
+  @label={{@label}}
+  @help={{@help}}
+  @validations={{@validations}}
+  @chart={{@chart}}
+  {{fix-super-select-aria}}
+>
+  <:label>
+    {{!- add an optional slot here called <:label>-}}
+    {{or @label @name}}
+  </:label>
+  <:input>
+    {{#if @expanded}}
+      {{#if @multiple}}
+        {{! checkboxes }}
+      {{else}}
+        {{! radiobuttons }}
+      {{/if}}
+    {{else}}
+      <Hds::Form::SuperSelect::Single::Field
+        @options={{@items}}
+        @selected={{@selected}}
+        @onChange={{@onchange}}
+        @disabled={{@disabled}}
+        @searchEnabled={{false}}
+      as |F|>
+        <F.Options>
+          {{yield (hash item=F.options) to='option'}}
+        </F.Options>
+      </Hds::Form::SuperSelect::Single::Field>
+    {{/if}}
+  </:input>
+</FormInput>

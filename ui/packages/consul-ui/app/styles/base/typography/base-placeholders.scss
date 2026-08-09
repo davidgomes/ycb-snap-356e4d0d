@@ -1,0 +1,75 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%display-500-bold {
+  @extend .hds-typography-display-500;
+  @extend .hds-font-weight-bold;
+}
+%display-400-bold {
+  @extend .hds-typography-display-400;
+  @extend .hds-font-weight-bold;
+}
+%display-400-semibold {
+  @extend .hds-typography-display-400;
+  @extend .hds-font-weight-semibold;
+}
+%display-400-medium {
+  @extend .hds-typography-display-400;
+  @extend .hds-font-weight-medium;
+}
+%display-300-bold {
+  @extend .hds-typography-display-300;
+  @extend .hds-font-weight-bold;
+}
+%display-300-semibold {
+  @extend .hds-typography-display-300;
+  @extend .hds-font-weight-semibold;
+}
+%display-300-medium {
+  @extend .hds-typography-display-300;
+  @extend .hds-font-weight-medium;
+}
+%display-200-semibold {
+  @extend .hds-typography-display-200;
+  @extend .hds-font-weight-semibold;
+}
+%display-100-medium {
+  @extend .hds-typography-display-100;
+  @extend .hds-font-weight-medium;
+}
+%display-100-semibold {
+  @extend .hds-typography-display-100;
+  @extend .hds-font-weight-semibold;
+}
+
+$sizes: 100, 200, 300;
+@each $size in $sizes {
+  %body-#{$size}-regular {
+    @extend .hds-typography-body-#{$size};
+    @extend .hds-font-weight-regular;
+  }
+  %body-#{$size}-medium {
+    @extend .hds-typography-body-#{$size};
+    @extend .hds-font-weight-medium;
+  }
+  %body-#{$size}-semibold {
+    @extend .hds-typography-body-#{$size};
+    @extend .hds-font-weight-semibold;
+  }
+
+  %code-#{$size}-regular {
+    font-family: var(--token-typography-font-stack-code);
+    font-size: var(--token-typography-code-#{$size}-font-size);
+    line-height: var(--token-typography-code-#{$size}-line-height);
+    font-weight: var(--token-typography-font-weight-regular);
+  }
+}
+
+%typo-inherit {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  font-style: inherit;
+}

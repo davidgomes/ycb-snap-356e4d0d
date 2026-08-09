@@ -1,0 +1,20 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{yield (hash
+  items=this.items
+  page=@page
+  pane=this.setPane
+  resize=this.resize
+  viewport=this.setViewport
+  rowHeight=this.setRowHeight
+  maxHeight=this.setMaxHeight
+  startHeight=this.startHeight
+  totalHeight=this.totalHeight
+  totalPages=this.totalPages
+  Pager=(if (eq this.type "index") (component 'yield') '')
+)}}
+
+{{will-destroy-helper this.disconnect}}

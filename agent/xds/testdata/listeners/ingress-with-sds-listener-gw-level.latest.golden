@@ -1,0 +1,62 @@
+{
+  "nonce": "00000001",
+  "resources": [
+    {
+      "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
+      "address": {
+        "socketAddress": {
+          "address": "1.2.3.4",
+          "portValue": 8080
+        }
+      },
+      "filterChains": [
+        {
+          "filters": [
+            {
+              "name": "envoy.filters.network.tcp_proxy",
+              "typedConfig": {
+                "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+                "cluster": "db.default.dc1.internal.11111111-2222-3333-4444-555555555555.consul",
+                "statPrefix": "upstream.db.default.default.dc1"
+              }
+            }
+          ],
+          "transportSocket": {
+            "name": "tls",
+            "typedConfig": {
+              "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+              "commonTlsContext": {
+                "tlsCertificateSdsSecretConfigs": [
+                  {
+                    "name": "cert-resource",
+                    "sdsConfig": {
+                      "apiConfigSource": {
+                        "apiType": "GRPC",
+                        "grpcServices": [
+                          {
+                            "envoyGrpc": {
+                              "clusterName": "sds-cluster"
+                            },
+                            "timeout": "5s"
+                          }
+                        ],
+                        "transportApiVersion": "V3"
+                      },
+                      "resourceApiVersion": "V3"
+                    }
+                  }
+                ],
+                "tlsParams": {}
+              },
+              "requireClientCertificate": false
+            }
+          }
+        }
+      ],
+      "name": "db:1.2.3.4:8080",
+      "trafficDirection": "OUTBOUND"
+    }
+  ],
+  "typeUrl": "type.googleapis.com/envoy.config.listener.v3.Listener",
+  "versionInfo": "00000001"
+}

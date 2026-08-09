@@ -1,0 +1,35 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@charset 'utf-8';
+
+@use "ember-basic-dropdown.css"; // ember-basic-dropdown
+@use "ember-power-select"; // ember-power-select
+
+/* css for hds */
+@use "helpers/typography.css";
+@use '@hashicorp/design-system-components.css';
+
+/* all variables and custom queries including generic base variables */
+@import 'variables';
+
+/* all components including generic base components */
+@import 'components';
+/* cascading typography */
+@import 'typography';
+/* layouts */
+@import 'layout';
+/* pinpoint individual overwrites for those 'just on this page' problems */
+@import 'routes';
+/* more semantically (for our project) named icons  */
+@import 'icons';
+/* global control of themeable components */
+@import './base/color/index';
+
+/* debug only, this is empty during a production build */
+/* but uses the contents of ./debug.scss during dev */
+@import '_debug';
+
+@import 'tailwind-like';

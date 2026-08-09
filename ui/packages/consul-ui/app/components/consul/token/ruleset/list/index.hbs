@@ -1,0 +1,66 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{#let (policy/group (or @item.Policies @item.ACLs.PolicyDefaults (array))) as |policies|}}
+  {{#let (get policies 'management') as |management|}}
+    {{#if (gt management.length 0)}}
+        <dl>
+          <dt>
+            Management
+          </dt>
+          <dd>
+              {{#each (get policies 'management') as |item|}}
+                <Consul::Acl::RulesetBadge
+                  @item={{item}}
+                  @type={{policy/typeof item}}
+                  data-test-policy
+                />
+              {{/each}}
+          </dd>
+        </dl>
+    {{/if}}
+  {{/let}}
+  {{#let (get policies 'identities') as |identities|}}
+    {{#if (gt identities.length 0)}}
+        <dl>
+          <dt>Identities</dt>
+          <dd>
+              {{#each identities as |item|}}
+                <Consul::Acl::RulesetBadge
+                  @item={{item}}
+                  @type={{policy/typeof item}}
+                  data-test-policy
+                />
+              {{/each}}
+          </dd>
+        </dl>
+    {{/if}}
+  {{/let}}
+  {{#if (token/is-legacy @item) }}
+        <dl>
+          <dt>Rules</dt>
+          <dd>
+              Legacy tokens have embedded rules.
+          </dd>
+        </dl>
+  {{else}}
+    {{#let (append (get policies 'policies') (or @item.Roles @item.ACLs.RoleDefaults (array))) as |policies|}}
+      {{#if (gt policies.length 0)}}
+        <dl>
+          <dt>Rules</dt>
+          <dd>
+            {{#each policies as |item|}}
+              <Consul::Acl::RulesetBadge
+                @item={{item}}
+                @type={{policy/typeof item}}
+                data-test-policy
+              />
+            {{/each}}
+          </dd>
+        </dl>
+      {{/if}}
+    {{/let}}
+  {{/if}}
+{{/let}}

@@ -1,0 +1,72 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+%modal-layer {
+  height: 0;
+}
+/*TODO: Should these be here? */
+%modal-window table {
+  height: 150px !important;
+}
+%modal-window tbody {
+  max-height: 100px;
+}
+%modal-dialog table {
+  min-height: 149px;
+}
+%modal-dialog > div:first-child {
+  @extend %modal-dialog-overlay;
+}
+%modal-dialog,
+%modal-dialog-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+%modal-dialog {
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+%modal-dialog[aria-hidden='true'] {
+  display: none;
+}
+%modal-window {
+  margin: auto;
+  z-index: 2;
+  position: relative;
+}
+/**/
+%modal-window {
+  max-width: 855px;
+  position: relative;
+}
+%modal-window > * {
+  padding-left: 15px;
+  padding-right: 15px;
+}
+%modal-window > div {
+  overflow-y: auto;
+  max-height: 80vh;
+  padding: 20px 23px;
+}
+%modal-window > .modal-dialog-footer,
+%modal-window > header {
+  padding-top: 12px;
+  padding-bottom: 10px;
+}
+%modal-window > header {
+  position: relative;
+}
+%modal-window > header button {
+  float: right;
+  margin-top: -3px;
+}

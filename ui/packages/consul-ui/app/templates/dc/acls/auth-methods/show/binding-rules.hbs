@@ -1,0 +1,70 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<Route
+  @name={{this.routeName}}
+as |route|>
+
+  <DataLoader @src={{
+    uri '/${partition}/${nspace}/${dc}/binding-rules/for-auth-method/${name}'
+      (hash
+        partition=route.params.partition
+        nspace=route.params.nspace
+        dc=route.params.dc
+        name=route.params.id
+      )
+    }}>
+  
+
+    <:error as |loader|>
+      <AppError
+        @error={{loader.error}}
+        @login={{route.model.app.login.open}}
+      />
+    </:error>
+
+    <:loaded as |loader|>
+{{#let
+  loader.data
+as |items|}}
+
+  <div class="tab-section">
+  {{#if (gt items.length 0)}}
+    <p>
+      Binding rules allow an operator to express a systematic way of automatically linking roles and service identities to newly created tokens without operator intervention.
+    </p>
+    <p>
+      Successful authentication with an auth method returns a set of trusted identity attributes corresponding to the authenticated identity. Those attributes are matched against all configured binding rules for that auth method to determine what privileges to grant the Consul ACL token it will ultimately create.
+    </p>
+    <hr />
+    {{#each items as |item|}}
+      <Consul::AuthMethod::BindingList @item={{item}} />
+      <hr />
+    {{/each}}
+  {{else}}
+    <EmptyState>
+      <:header>
+        <h2>
+          {{t 'routes.dc.acls.auth-methods.show.binding-rules.index.empty.header'}}
+        </h2>
+      </:header>
+      <:body>
+        {{t 'routes.dc.acls.auth-methods.show.binding-rules.index.empty.body'
+          htmlSafe=true
+        }}>
+      </:body>
+      <:actions>
+        <li class="docs-link">
+          <a href="{{env 'CONSUL_DOCS_API_URL'}}/acl/binding-rules" rel="noopener noreferrer" target="_blank">Read the documentation</a>
+        </li>
+      </:actions>
+    </EmptyState>
+  {{/if}}
+  </div>
+{{/let}}
+
+    </:loaded>
+  </DataLoader>
+</Route>

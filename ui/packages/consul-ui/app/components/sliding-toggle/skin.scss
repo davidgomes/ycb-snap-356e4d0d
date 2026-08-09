@@ -1,0 +1,35 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+/* TODO: Maybe move this to reset? */
+%sliding-toggle label span {
+  cursor: pointer;
+}
+%sliding-toggle label span::after {
+  border-radius: var(--decor-radius-full);
+}
+%sliding-toggle label span::before {
+  border-radius: 7px;
+}
+%sliding-toggle-negative {
+  border: 0;
+}
+%sliding-toggle.type-negative {
+  @extend %sliding-toggle-negative;
+}
+%sliding-toggle label span {
+  color: var(--token-color-foreground-strong);
+}
+%sliding-toggle label span::after {
+  background-color: var(--token-color-surface-primary);
+}
+%sliding-toggle label input:checked + span::before,
+%sliding-toggle-negative label input + span::before {
+  background-color: var(--token-color-foreground-action);
+}
+%sliding-toggle label span::before,
+%sliding-toggle-negative label input:checked + span::before {
+  background-color: var(--token-color-palette-neutral-300);
+}

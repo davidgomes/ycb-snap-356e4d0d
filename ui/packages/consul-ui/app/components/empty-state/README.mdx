@@ -1,0 +1,81 @@
+---
+class: ember
+---
+# EmptyState
+
+Consul UIs default 'empty state' used for when we retrive an empty result set,
+whether that set is successful or erroneous. This is mainly used via the
+`ErrorState` component, so also consider using that directly instead of this
+component if dealing with errors.
+
+## Arguments
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `login` | `Function` | `undefined` | A login action to call when the login button is pressed (if not provided no login button will be shown  |
+
+Icons are controlled via a `status-xxx` class. `xxx` should be some sort of
+3 digit error code, special icons are used for `404` and `403`, otherwise a
+generic icon will be used. To add any further special icons please add to the
+component's `skin` file.
+
+If the `@login` attribute is provided, a button will be shown directly
+underneath the body text clicking on which will fire the provided `@login`
+function.
+
+```hbs
+<EmptyState
+  class="status-404"
+  @login={{noop}}
+>
+  <:header>
+    <h2>
+      Header
+    </h2>
+  </:header>
+  <:subheader>
+    <h3>
+      Subheader
+    </h3>
+  </:subheader>
+  <:body>
+    <p>
+      Body text
+    </p>
+  </:body>
+  <:actions>
+    <li>
+      <Hds::Link::Standalone
+        @text='Documentation on namespaces'
+        @href="{{env 'CONSUL_DOCS_URL'}}/commands/namespace"
+        @icon='docs-link'
+        @iconPosition='trailing'
+        @size='small'
+      />
+    </li>
+    <li>
+      <Hds::Link::Standalone
+        @text='Read the guide'
+        @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/namespaces/secure-namespaces"
+        @icon='learn-link'
+        @iconPosition='trailing'
+        @size='small'
+      />
+    </li>
+  </:actions>
+</EmptyState>
+```
+
+The component has four slots for specifying header, subheader, body and
+'actions', although the component will show a minimal empty slot if only the
+body slot is specified:
+
+```hbs
+<EmptyState>
+  <:body>
+    <p>
+      Minimal text
+    </p>
+  </:body>
+</EmptyState>
+```

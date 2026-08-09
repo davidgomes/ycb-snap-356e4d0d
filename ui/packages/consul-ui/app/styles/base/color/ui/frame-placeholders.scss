@@ -1,0 +1,166 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+/*TODO: Move this to the reset */
+* {
+  border-width: 0;
+}
+%frame-border-000 {
+  /* same as decor-border-000 - but need to think about being able to import color on its own*/
+  border-style: solid;
+}
+
+/* possibly filter bar */
+/* modal close button */
+%frame-gray-050 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-strong);
+  border-color: var(--token-color-palette-neutral-300);
+  color: var(--token-color-foreground-faint);
+}
+/* button focus */
+%frame-gray-300 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-primary);
+  border-color: var(--token-color-foreground-faint);
+  color: var(--token-color-foreground-primary);
+}
+/* button secondary*/
+%frame-gray-400 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-strong);
+  border-color: var(--token-color-palette-neutral-300);
+  color: var(--token-color-foreground-primary);
+}
+
+/* tabs */
+%frame-gray-600 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-strong);
+  border-color: var(--token-color-foreground-faint);
+  color: var(--token-color-foreground-primary);
+}
+/* button active */
+%frame-gray-700 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-interactive-active);
+  border-color: var(--token-color-foreground-faint);
+  color: var(--token-color-foreground-primary);
+}
+/* modal bars */
+%frame-gray-800 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-strong);
+  border-color: var(--token-color-palette-neutral-300);
+  color: var(--token-color-foreground-strong);
+}
+%frame-gray-900 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-strong);
+  border-color: var(--token-color-palette-neutral-300);
+  color: var(--token-color-foreground-strong);
+}
+
+%frame-yellow-500 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-vault-gradient-faint-start);
+  border-color: var(--token-color-vault-brand);
+}
+%frame-yellow-800 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-vault-brand);
+  border-color: var(--token-color-vault-foreground);
+  color: var(--token-color-surface-primary);
+}
+%frame-green-500 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-success);
+  border-color: var(--token-color-foreground-success);
+  color: var(--token-color-foreground-success);
+}
+%frame-green-800 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-success);
+  border-color: var(--token-color-palette-green-400);
+  color: var(--token-color-surface-primary);
+}
+%frame-blue-200 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-primary);
+  border-color: var(--token-color-foreground-action);
+  color: var(--token-color-foreground-action);
+}
+%frame-blue-300 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-primary);
+  border-color: var(--token-color-foreground-action);
+  color: var(--token-color-foreground-action);
+}
+%frame-blue-500 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-action);
+  border-color: var(--token-color-foreground-action);
+  color: var(--token-color-palette-blue-500);
+}
+%frame-blue-600 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-border-action);
+  border-color: var(--token-color-foreground-disabled);
+  color: var(--token-color-surface-action);
+}
+%frame-blue-700 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-action);
+  border-color: var(--token-color-palette-blue-500);
+  color: var(--token-color-surface-primary);
+}
+%frame-blue-800 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-action);
+  border-color: var(--token-color-palette-blue-500);
+  color: var(--token-color-surface-primary);
+}
+%frame-blue-900 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-action-active);
+  border-color: var(--token-color-palette-blue-500);
+  color: var(--token-color-surface-primary);
+}
+%frame-red-300 {
+  @extend %frame-border-000;
+  background-color: transparent;
+  border-color: var(--token-color-foreground-critical);
+  color: var(--token-color-foreground-critical);
+}
+%frame-red-500 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-surface-critical);
+  border-color: var(--token-color-foreground-critical);
+  color: var(--token-color-foreground-critical-high-contrast);
+}
+%frame-red-600 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-border-critical);
+  border-color: var(--token-color-foreground-disabled);
+  color: var(--token-color-surface-primary);
+}
+%frame-red-700 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-critical);
+  border-color: var(--token-color-foreground-critical-high-contrast);
+  color: var(--token-color-surface-primary);
+}
+%frame-red-800 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-foreground-critical);
+  border-color: var(--token-color-foreground-critical-high-contrast);
+  color: var(--token-color-surface-primary);
+}
+%frame-red-900 {
+  @extend %frame-border-000;
+  background-color: var(--token-color-palette-red-400);
+  border-color: var(--token-color-foreground-critical-high-contrast);
+  color: var(--token-color-surface-primary);
+}

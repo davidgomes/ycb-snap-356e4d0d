@@ -1,0 +1,112 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import { inject as service } from '@ember/service';
+import { computed, set } from '@ember/object';
+import Component from 'ember-collection/components/ember-collection';
+import PercentageColumns from 'ember-collection/layouts/percentage-columns';
+
+const formatItemStyle = PercentageColumns.prototype.formatItemStyle;
+
+export default Component.extend({
+  dom: service('dom'),
+  tagName: '',
+  height: 500,
+  cellHeight: 70,
+  checked: null,
+  scroll: 'virtual',
+  init: function () {
+    this._super(...arguments);
+    this.columns = [100];
+    this.guid = this.dom.guid(this);
+  },
+  didInsertElement: function () {
+    this._super(...arguments);
+    this.$element = this.dom.element(`#${this.guid}`);
+    if (this.scroll === 'virtual') {
+      this.actions.resize.apply(this, [{ target: this.dom.viewport() }]);
+    }
+  },
+  didReceiveAttrs: function () {
+    this._super(...arguments);
+    this._cellLayout = this['cell-layout'] = new PercentageColumns(
+      this.items?.length,
+      this.columns,
+      this.cellHeight
+    );
+    const o = this;
+    this['cell-layout'].formatItemStyle = function (itemIndex) {
+      let style = formatItemStyle.apply(this, arguments);
+      const items = o.items;
+      if (items && items[itemIndex] && o.checked === items[itemIndex].uid) {
+        style = `${style};z-index: 1`;
+      }
+      return style;
+    };
+  },
+
+  style: computed('height', 'scroll', {
+    get() {
+      if (this.scroll !== 'virtual') {
+        return {};
+      } else {
+        return {
+          height: this.height,
+        };
+      }
+    },
+
+    set(_key, value) {
+      return value;
+    },
+  }),
+
+  actions: {
+    resize: function (e) {
+      // TODO: This top part is very similar to resize in tabular-collection
+      // see if it make sense to DRY out
+      const dom = this.dom;
+      const $footer = dom.element('#contentinfo');
+      if ($footer) {
+        const border = 1;
+        const rect = this.$element.getBoundingClientRect();
+        const space = rect.top + $footer.clientHeight + border;
+        const height = e.target.innerHeight - space;
+        this.set('height', Math.max(0, height));
+        this.updateItems();
+        this.updateScrollPosition();
+      }
+    },
+    click: function (e) {
+      return this.dom.clickFirstAnchor(e, '.list-collection > ul > li');
+    },
+    change: function (index, e = {}) {
+      if (e.target.checked && index !== this.checked) {
+        set(this, 'checked', index);
+        this.$row = this.dom.closest('li', e.target);
+        this.$row.style.zIndex = 1;
+
+        const $group = this.dom.sibling(e.target, 'div');
+        const groupRect = $group.getBoundingClientRect();
+        const groupBottom = groupRect.top + $group.clientHeight;
+
+        const $footer = this.dom.element('#contentinfo');
+        const footerRect = $footer.getBoundingClientRect();
+        const footerTop = footerRect.top;
+
+        if (groupBottom > footerTop) {
+          $group.classList.add('above');
+        } else {
+          $group.classList.remove('above');
+        }
+      } else {
+        const $group = this.dom.sibling(e.target, 'div');
+        $group.classList.remove('above');
+        set(this, 'checked', null);
+        this.$row.style.zIndex = null;
+      }
+    },
+  },
+});

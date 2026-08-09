@@ -1,0 +1,17 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.consul-intention-list {
+  td.source,
+  td.destination {
+    @extend %tbody-th;
+  }
+  td .consul-intention-action-badge {
+    display: inline-flex;
+  }
+  td.permissions {
+    @extend %body-100-regular;
+  }
+}

@@ -1,0 +1,23 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+import BaseAbility from './base';
+import classic from 'ember-classic-decorator';
+
+@classic
+export default class IntentionAbility extends BaseAbility {
+  resource = 'intention';
+
+  get canWrite() {
+    // Peered intentions aren't writable
+    if (typeof this.item !== 'undefined' && typeof this.item.SourcePeer !== 'undefined') {
+      return false;
+    }
+    return super.canWrite && (typeof this.item === 'undefined' || !this.canViewCRD);
+  }
+  get canViewCRD() {
+    return typeof this.item !== 'undefined' && this.item.IsManagedByCRD;
+  }
+}

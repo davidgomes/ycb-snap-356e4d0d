@@ -1,0 +1,23 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+@import './layout';
+@import './skin';
+.empty-state {
+  @extend %empty-state;
+}
+%empty-state header :first-child {
+  @extend %empty-state-header;
+}
+%empty-state header :nth-child(2) {
+  @extend %empty-state-subheader;
+}
+%empty-state-anchor {
+  @extend %anchor;
+}
+%empty-state > ul > li > *,
+%empty-state > ul > li > label > button {
+  @extend %empty-state-anchor;
+}

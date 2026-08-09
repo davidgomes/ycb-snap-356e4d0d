@@ -1,0 +1,15 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+{{yield
+  (action 'change')
+  (action 'keypress')
+  (action 'keypressClick')
+  (hash
+    labelledBy=(concat 'component-aria-menu-trigger-' this.guid)
+    controls=(concat 'component-aria-menu-menu-' this.guid)
+    expanded=(if this.expanded 'true' undefined)
+  )
+}}

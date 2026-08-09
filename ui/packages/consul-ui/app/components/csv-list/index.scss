@@ -1,0 +1,22 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+:root {
+  --csv-list-separator: ',';
+}
+%csv-list {
+  // mainly used for block elements, you may need to overwrite this with an
+  // inline-flex to keep any inline-ness
+  display: flex;
+}
+%csv-list > * {
+  @extend %csv;
+}
+%csv:not(:last-child)::after {
+  display: inline;
+  content: var(--csv-list-separator);
+  vertical-align: initial;
+  margin-right: 0.3em;
+}

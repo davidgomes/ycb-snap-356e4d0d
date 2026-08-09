@@ -1,0 +1,66 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<div
+  class="popover-menu"
+  ...attributes
+>
+  <AriaMenu @keyboardAccess={{this.keyboardAccess}} as |change keypress keypressClick aria|>
+
+{{#let (hash
+  MenuItem=(component
+    'popover-menu/menu-item'
+    menu=(hash
+      addSubmenu=(action "addSubmenu")
+      removeSubmenu=(action "removeSubmenu")
+      confirm=(concat "popover-menu-" this.guid "-")
+      clickTrigger=this.toggle.click
+      keypressClick=keypressClick
+    )
+  )
+  MenuSeparator=(component
+    'popover-menu/menu-separator'
+  )
+)
+as |components|}}
+{{#let (hash
+  toggle=this.toggle.click
+)
+as |api|}}
+
+    <ToggleButton
+      @checked={{if this.keyboardAccess aria.expanded this.expanded}}
+      @onchange={{queue change (action "change")}}
+    as |toggle|>
+      <Ref @target={{this}} @name="toggle" @value={{toggle}} />
+      <button type="button" aria-haspopup="menu" onkeydown={{keypress}} onclick={{this.toggle.click}} id={{aria.labelledBy}} aria-controls={{aria.controls}}>
+        {{yield components api to="trigger"}}
+      </button>
+    </ToggleButton>
+
+    <MenuPanel @position={{this.position}} id={{aria.controls}} aria-labelledby={{aria.labelledBy}} aria-expanded={{aria.expanded}}>
+
+      <:controls as |menu|>
+        <Ref @target={{this}} @name="menu" @value={{menu}} />
+        <input type="checkbox" id={{concat 'popover-menu-' this.guid '-'}} />
+      {{#each this.submenus as |sub|}}
+        <input type="checkbox" id={{concat 'popover-menu-' this.guid '-' sub}} onchange={{menu.change}} />
+      {{/each}}
+      </:controls>
+      <:header>
+        {{#if (has-block "header")}}
+          {{yield components api to="header"}}
+        {{/if}}
+      </:header>
+      <:menu>
+        {{yield components api (concat "popover-menu-" this.guid "-") keypressClick this.toggle.click to="menu"}}
+      </:menu>
+    </MenuPanel>
+
+{{/let}}
+{{/let}}
+
+  </AriaMenu>
+</div>

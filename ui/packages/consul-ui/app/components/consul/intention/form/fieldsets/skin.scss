@@ -1,0 +1,16 @@
+/**
+ * Copyright IBM Corp. 2024, 2026
+ * SPDX-License-Identifier: BUSL-1.1
+ */
+
+.consul-intention-fieldsets {
+  .value-allow > :last-child::before {
+    @extend %with-allow-500;
+  }
+  .value-deny > :last-child::before {
+    @extend %with-deny-500;
+  }
+  .value- > :last-child::before {
+    @extend %with-l7-500;
+  }
+}

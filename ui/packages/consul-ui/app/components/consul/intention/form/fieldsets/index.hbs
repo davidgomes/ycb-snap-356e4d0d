@@ -1,0 +1,312 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<div
+  ...attributes
+  class="consul-intention-fieldsets"
+  {{fix-super-select-aria}}
+>
+  <fieldset disabled={{@disabled}}>
+    <div role="group">
+      <fieldset>
+        <h2>Source</h2>
+        <label data-test-source-element class="type-select{{if @item.error.SourceName ' has-error'}}">
+          <span>Source Service</span>
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@services}}
+            @searchField="Name"
+            @selected={{@sourceName}}
+            @searchPlaceholder="Type service name"
+            @buildSuggestion="Use a Consul Service called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @services}}
+            @onChange={{action @onchange "SourceName"}}
+            @label="Source Service"
+            @listboxAriaLabel="Available source services"
+            @isOptional={{false}}
+          as |service|>
+            {{#if (eq service.Name '*') }}
+              * (All Services)
+            {{else}}
+              {{service.Name}}
+            {{/if}}
+          </SuperSelectWithCreate>
+
+        {{#if @create}}
+          <em>Search for an existing service, or enter any Service name.</em>
+        {{/if}}
+        </label>
+  {{#if (can 'choose nspaces')}}
+        <label data-test-source-nspace class="type-select{{if @item.error.SourceNS ' has-error'}}">
+          <span>Source Namespace</span>
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@nspaces}}
+            @searchField="Name"
+            @selected={{@sourceNS}}
+            @searchPlaceholder="Type namespace name"
+            @buildSuggestion="Use a Consul Namespace called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @nspaces}}
+            @onChange={{action @onchange "SourceNS"}}
+            @label="Source Namespace"
+            @listboxAriaLabel="Available source namespaces"
+            @isOptional={{false}}
+          as |nspace|>
+            {{#if (eq nspace.Name '*') }}
+              * (All Namespaces)
+            {{else}}
+              {{nspace.Name}}
+            {{/if}}
+          </SuperSelectWithCreate>
+        {{#if @create}}
+          <em>Search for an existing namespace, or enter any Namespace name.</em>
+        {{/if}}
+        </label>
+  {{/if}}
+  {{#if (can 'choose partitions' dc=@dc)}}
+        <label data-test-source-partition class="type-select{{if @item.error.SourcePartition ' has-error'}}">
+          <span>Source Partition</span>
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@partitions}}
+            @searchField="Name"
+            @selected={{@sourcePartition}}
+            @searchPlaceholder="Type partition name"
+            @buildSuggestion="Use a Consul Partition called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @partitions}}
+            @onChange={{action @onchange "SourcePartition"}}
+            @label="Source Partition"
+            @listboxAriaLabel="Available source partitions"
+            @isOptional={{false}}
+          as |partition|>
+            {{partition.Name}}
+          </SuperSelectWithCreate>
+        {{#if @create}}
+          <em>Search for an existing partition, or enter any Partition name.</em>
+        {{/if}}
+        </label>
+  {{/if}}
+      </fieldset>
+      <fieldset>
+        <h2>Destination</h2>
+        <label data-test-destination-element class="type-select{{if @item.error.DestinationName ' has-error'}}">
+          <span>Destination Service</span>
+
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@services}}
+            @searchField="Name"
+            @selected={{@destinationName}}
+            @searchPlaceholder="Type service name"
+            @buildSuggestion="Use a Consul Service called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @services}}
+            @onChange={{action @onchange "DestinationName"}}
+            @label="Destination Service"
+            @listboxAriaLabel="Available destination services"
+            @isOptional={{false}}
+          as |service|>
+            {{#if (eq service.Name '*') }}
+              * (All Services)
+            {{else}}
+              {{service.Name}}
+            {{/if}}
+          </SuperSelectWithCreate>
+        {{#if @create}}
+          <em>Search for an existing service, or enter any Service name.</em>
+        {{/if}}
+        </label>
+  {{#if (can 'choose nspaces')}}
+        <label data-test-destination-nspace class="type-select{{if @item.error.DestinationNS ' has-error'}}">
+          <span>Destination Namespace</span>
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@nspaces}}
+            @searchField="Name"
+            @selected={{@destinationNS}}
+            @searchPlaceholder="Type namespace name"
+            @buildSuggestion="Use a future Consul Namespace called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @nspaces}}
+            @onChange={{action @onchange "DestinationNS"}}
+            @label="Destination Namespace"
+            @listboxAriaLabel="Available destination namespaces"
+            @isOptional={{false}}
+          as |nspace|>
+            {{#if (eq nspace.Name '*') }}
+              * (All Namespaces)
+            {{else}}
+              {{nspace.Name}}
+            {{/if}}
+          </SuperSelectWithCreate>
+        {{#if @create}}
+          <em>For the destination, you may choose any namespace for which you have access.</em>
+        {{/if}}
+        </label>
+  {{/if}}
+  {{#if (can 'choose partitions' dc=@dc)}}
+        <label data-test-destination-partition class="type-select{{if @item.error.DestinationPartition ' has-error'}}">
+          <span>Destination Partition</span>
+          <SuperSelectWithCreate
+            @disabled={{not @create}}
+            @options={{@partitions}}
+            @searchField="Name"
+            @selected={{@destinationPartition}}
+            @searchPlaceholder="Type partition name"
+            @buildSuggestion="Use a future Consul Partition called '__TERM__'"
+            @showCreateWhen={{action "isUnique" @partitions}}
+            @onChange={{action @onchange "DestinationPartition"}}
+            @label="Destination Partition"
+            @listboxAriaLabel="Available destination partitions"
+            @isOptional={{false}}
+          as |partition|>
+            {{partition.Name}}
+          </SuperSelectWithCreate>
+        {{#if @create}}
+          <em>For the destination, you may choose any partition for which you have access.</em>
+        {{/if}}
+        </label>
+  {{/if}}
+      </fieldset>
+    </div>
+  <fieldset>
+    <label class="type-text{{if @item.error.Description ' has-error'}}">
+      <span>Description (Optional)</span>
+      <input type="text" name="Description" value={{@item.Description}} placeholder="Description (Optional)" onchange={{action @onchange}} />
+    </label>
+  </fieldset>
+    <div>
+      <span class="label">Should this source connect to the destination?</span>
+      <div role="radiogroup" class={{if @item.error.Action ' has-error'}}>
+        {{#each
+          (array
+            (hash
+              intent="allow"
+              header="Allow"
+              body="The source service will be allowed to connect to the destination."
+            )
+            (hash
+              intent="deny"
+              header="Deny"
+              body="The source service will not be allowed to connect to the destination."
+            )
+            (hash
+              intent=""
+              header="Application Aware"
+              body="The source service may or may not connect to the destination service via unique permissions based on Layer 7 criteria: path, header, or method."
+            )
+          )
+      as |_action|}}
+          <RadioCard
+            class={{concat 'value-' _action.intent}}
+            @value={{_action.intent}}
+            @checked={{if (eq (or @item.Action '') _action.intent) 'checked'}}
+            @onchange={{action @onchange}}
+            @name="Action"
+          as |radio|>
+            <header>
+              {{_action.header}}
+            </header>
+            <p>
+              {{_action.body}}
+            </p>
+          </RadioCard>
+        {{/each}}
+      </div>
+    </div>
+  </fieldset>
+{{#if (eq (or @item.Action '') '')}}
+  <fieldset class="permissions">
+    <Hds::Button
+      @text='Add permission'
+      @size='small'
+      @color='tertiary'
+      @icon='plus'
+      data-test-create-permission
+      {{on "click" (action this.openModal)}}
+    />
+    <h2>Permissions</h2>
+{{#if (gt @item.Permissions.length 0) }}
+    <Consul::Intention::Notice::Permissions />
+    <Consul::Intention::Permission::List
+      @items={{@item.Permissions}}
+      @onclick={{queue (action (mut this.permission)) (action this.openModal)}}
+      @ondelete={{action 'delete' 'Permissions' @item}}
+    />
+{{else}}
+    <EmptyState>
+      <:header>
+        <h3>
+          No permissions yet
+        </h3>
+      </:header>
+      <:body>
+        <p>
+          Permissions intercept an Intention's traffic using Layer 7 criteria, such as path prefixes and http headers.
+        </p>
+      </:body>
+      <:actions>
+        <li>
+          <Hds::Link::Standalone
+            @text='Documentation'
+            @href="{{env 'CONSUL_DOCS_URL'}}/commands/intention"
+            @icon='docs-link'
+            @iconPosition='trailing'
+            @size='small'
+          />
+        </li>
+        <li>
+          <Hds::Link::Standalone
+            @text='Read the guide'
+            @href="{{env 'CONSUL_DOCS_LEARN_URL'}}/consul/getting-started/connect"
+            @icon='learn-link'
+            @iconPosition='trailing'
+            @size='small'
+          />
+        </li>
+      </:actions>
+    </EmptyState>
+{{/if}}
+  </fieldset>
+{{/if}}
+
+  <ModalDialog
+    class="consul-intention-permission-modal"
+    @onclose={{action (mut this.permission) undefined}}
+    @aria={{hash
+      label="Edit Permission"
+    }}
+  >
+    <:default as |modal|>
+          <Ref @target={{this}} @name="modal" @value={{modal}} />
+    </:default>
+    <:header>
+      <h3>Edit Permission</h3>
+    </:header>
+    <:body>
+      <Consul::Intention::Permission::Form
+        @item={{this.permission}}
+        @onsubmit={{action 'add' 'Permissions' @item}}
+      as |permissionForm|>
+        <Ref @target={{this}} @name="permissionForm" @value={{permissionForm}} />
+      </Consul::Intention::Permission::Form>
+    </:body>
+    <:actions as |close|>
+      <Hds::ButtonSet>
+        <Hds::Button
+          @text='Save'
+          data-test-intention-permission-submit
+          @color='primary'
+          disabled={{if (not this.permissionForm.isDirty) 'disabled'}}
+          onclick={{queue (action this.permissionForm.submit) (action close)}}
+        />
+        <Hds::Button
+          @text='Cancel'
+          @color='secondary'
+          onclick={{queue (action this.permissionForm.reset) (action close)}}
+        />
+      </Hds::ButtonSet>
+    </:actions>
+  </ModalDialog>
+
+</div>

@@ -1,0 +1,40 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<table
+  class="tabular-collection dom-recycling {{if (has-block 'actions') 'has-actions' ''}}"
+  id={{this.guid}}
+  style={{{concat
+    'height:' this.style.height 'px'
+  }}}
+  ...attributes
+>
+{{on-window 'resize' (action "resize") }}
+{{yield}}
+{{#if (has-block "caption")}}
+  <caption>{{yield to="caption"}}</caption>
+{{/if}}
+  <thead>
+    <tr>
+      {{yield to="header"}}
+{{#if (has-block 'actions')}}
+      <th class="actions">Actions</th>
+{{/if}}
+    </tr>
+  </thead>
+  <EmberNativeScrollable @tagName="tbody" @content-size={{this._contentSize}} @scroll-left={{this._scrollLeft}} @scroll-top={{this._scrollTop}} @scrollChange={{action "scrollChange"}} @clientSizeChange={{action "clientSizeChange"}}>
+    <tr></tr>
+{{~#each this._cells as |cell index|~}}
+    <tr data-test-tabular-row style={{{cell.style}}} onclick={{action 'click'}}>
+      {{yield cell.item index to="row"}}
+{{#if (has-block 'actions')}}
+      <td class="actions">
+        {{yield cell.item cell.index (action "change") this.checked to="actions"}}
+      </td>
+{{/if}}
+    </tr>
+{{~/each~}}
+  </EmberNativeScrollable>
+</table>

@@ -1,0 +1,22 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+
+<div class={{concat "with-confirmation" (if this.confirming " confirming" "")}} ...attributes>
+  {{#if (has-block)}}
+    {{yield}}
+  {{/if}}
+
+  {{#if (has-block "action")}}
+    {{#if (or this.permanent (not this.confirming))}}
+      {{yield (action "confirm") (action "cancel") to="action"}}
+    {{/if}}
+  {{/if}}
+
+  {{#if (has-block "dialog")}}
+    {{#if this.confirming}}
+      {{yield (action "execute") (action "cancel") @message this.actionName to="dialog"}}
+    {{/if}}
+  {{/if}}
+</div>

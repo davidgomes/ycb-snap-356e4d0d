@@ -1,0 +1,12 @@
+{{!
+  Copyright (c) HashiCorp, Inc.
+  SPDX-License-Identifier: BUSL-1.1
+}}
+{{!-- template-lint-disable require-presentational-children --}}
+<li role="separator">
+  {{#if (has-block "label")}}
+    {{yield to="label"}}
+  {{else}}
+    {{yield}}
+  {{/if}}
+</li>
