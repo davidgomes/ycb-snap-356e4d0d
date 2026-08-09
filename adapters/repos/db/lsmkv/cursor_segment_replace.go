@@ -1,0 +1,492 @@
+//                           _       _
+// __      _____  __ ___   ___  __ _| |_ ___
+// \ \ /\ / / _ \/ _` \ \ / / |/ _` | __/ _ \
+//  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
+//   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
+//
+//  Copyright © 2016 - 2026 Weaviate B.V. All rights reserved.
+//
+//  CONTACT: hello@weaviate.io
+//
+
+package lsmkv
+
+import (
+	"bufio"
+	"errors"
+	"io"
+	"sync"
+
+	"github.com/weaviate/weaviate/entities/lsmkv"
+	"github.com/weaviate/weaviate/usecases/byteops"
+)
+
+// segmentCursorReaderBufSize matches bufio.NewReader's default so pooled readers
+// behave byte-for-byte like the previous bufio.NewReader(or) call.
+const segmentCursorReaderBufSize = 4096
+
+// segmentCursorReaderPool recycles reusable-cursor read buffers (one per segment
+// per digest RPC), previously the largest allocation source in async-rep scans.
+var segmentCursorReaderPool = sync.Pool{
+	New: func() any { return bufio.NewReaderSize(nil, segmentCursorReaderBufSize) },
+}
+
+func acquireSegmentCursorReader(r io.Reader) *bufio.Reader {
+	br := segmentCursorReaderPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	return br
+}
+
+// offsetReader adapts an io.ReaderAt into a sequential io.Reader by tracking
+// the current read position. Used by segmentCursorReplaceReusable to avoid
+// allocating a new SectionReader on every node read.
+type offsetReader struct {
+	ra  readerAt
+	off int64
+}
+
+type readerAt interface {
+	ReadAt(p []byte, off int64) (n int, err error)
+}
+
+func (r *offsetReader) Read(p []byte) (int, error) {
+	n, err := r.ra.ReadAt(p, r.off)
+	r.off += int64(n)
+	return n, err
+}
+
+type segmentCursorReplace struct {
+	segment       *segment
+	index         diskIndex
+	keyFn         func(n *segmentReplaceNode) []byte
+	firstOffsetFn func() (uint64, error)
+	nextOffsetFn  func(n *segmentReplaceNode) (uint64, error)
+	currOffset    uint64
+	reusableNode  *segmentReplaceNode
+	reusableBORW  byteops.ReadWriter
+}
+
+func (s *segment) newCursor() innerCursorReplaceAllKeys {
+	cursor := &segmentCursorReplace{
+		segment: s,
+		index:   s.index,
+		firstOffsetFn: func() (uint64, error) {
+			if s.dataStartPos == s.dataEndPos {
+				return 0, lsmkv.NotFound
+			}
+			return s.dataStartPos, nil
+		},
+		currOffset: s.dataStartPos,
+		keyFn: func(n *segmentReplaceNode) []byte {
+			return n.primaryKey
+		},
+		reusableNode: &segmentReplaceNode{},
+		reusableBORW: byteops.NewReadWriter(nil),
+	}
+
+	cursor.nextOffsetFn = func(n *segmentReplaceNode) (uint64, error) {
+		return cursor.currOffset + uint64(n.offset), nil
+	}
+
+	return cursor
+}
+
+// Note: scanning over secondary keys is sub-optimal
+// i.e. no sequential scan is possible as when scanning over the primary key
+
+func (s *segment) newCursorWithSecondaryIndex(pos int) *segmentCursorReplace {
+	return &segmentCursorReplace{
+		segment: s,
+		index:   s.secondaryIndices[pos],
+		keyFn: func(n *segmentReplaceNode) []byte {
+			return n.secondaryKeys[pos]
+		},
+		firstOffsetFn: func() (uint64, error) {
+			index := s.secondaryIndices[pos]
+			n, err := index.Seek(nil)
+			if err != nil {
+				return 0, err
+			}
+			return n.Start, nil
+		},
+		nextOffsetFn: func(n *segmentReplaceNode) (uint64, error) {
+			index := s.secondaryIndices[pos]
+			next, err := index.Next(n.secondaryKeys[pos])
+			if err != nil {
+				return 0, err
+			}
+			return next.Start, nil
+		},
+		reusableNode: &segmentReplaceNode{
+			secondaryIndexCount: s.secondaryIndexCount,
+			secondaryKeys:       make([][]byte, s.secondaryIndexCount),
+		},
+		reusableBORW: byteops.NewReadWriter(nil),
+	}
+}
+
+func (sg *SegmentGroup) newCursors() ([]innerCursorReplace, func()) {
+	segments, release := sg.getConsistentViewOfSegments()
+
+	out := make([]innerCursorReplace, len(segments))
+	for i, segment := range segments {
+		out[i] = segment.newCursor()
+	}
+
+	return out, release
+}
+
+func (sg *SegmentGroup) newCursorsWithSecondaryIndex(pos int) ([]innerCursorReplace, func()) {
+	segments, release := sg.getConsistentViewOfSegments()
+
+	out := make([]innerCursorReplace, 0, len(segments))
+	for _, segment := range segments {
+		if uint16(pos) < segment.getSecondaryIndexCount() {
+			out = append(out, segment.newCursorWithSecondaryIndex(pos))
+		}
+	}
+
+	return out, release
+}
+
+func (s *segmentCursorReplace) seek(key []byte) ([]byte, []byte, error) {
+	node, err := s.index.Seek(key)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.currOffset = node.Start
+
+	err = s.parseReplaceNodeInto(nodeOffset{start: node.Start, end: node.End},
+		s.segment.contents[node.Start:node.End])
+	if err != nil {
+		return s.keyFn(s.reusableNode), nil, err
+	}
+
+	return s.keyFn(s.reusableNode), s.reusableNode.value, nil
+}
+
+func (s *segmentCursorReplace) next() ([]byte, []byte, error) {
+	nextOffset, err := s.nextOffsetFn(s.reusableNode)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if nextOffset >= s.segment.dataEndPos {
+		return nil, nil, lsmkv.NotFound
+	}
+
+	s.currOffset = nextOffset
+
+	err = s.parseReplaceNodeInto(nodeOffset{start: s.currOffset},
+		s.segment.contents[s.currOffset:])
+	if err != nil {
+		return s.keyFn(s.reusableNode), nil, err
+	}
+
+	return s.keyFn(s.reusableNode), s.reusableNode.value, nil
+}
+
+func (s *segmentCursorReplace) first() ([]byte, []byte, error) {
+	firstOffset, err := s.firstOffsetFn()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.currOffset = firstOffset
+
+	err = s.parseReplaceNodeInto(nodeOffset{start: s.currOffset},
+		s.segment.contents[s.currOffset:])
+	if err != nil {
+		return s.keyFn(s.reusableNode), nil, err
+	}
+
+	return s.keyFn(s.reusableNode), s.reusableNode.value, nil
+}
+
+func (s *segmentCursorReplace) nextWithAllKeys() (n segmentReplaceNode, err error) {
+	nextOffset, err := s.nextOffsetFn(s.reusableNode)
+	if err != nil {
+		return n, err
+	}
+
+	if nextOffset >= s.segment.dataEndPos {
+		return n, lsmkv.NotFound
+	}
+
+	s.currOffset = nextOffset
+
+	n, err = s.parseReplaceNode(nodeOffset{start: s.currOffset})
+
+	s.reusableNode = &n
+
+	return n, err
+}
+
+func (s *segmentCursorReplace) firstWithAllKeys() (n segmentReplaceNode, err error) {
+	firstOffset, err := s.firstOffsetFn()
+	if err != nil {
+		return n, err
+	}
+
+	s.currOffset = firstOffset
+
+	n, err = s.parseReplaceNode(nodeOffset{start: s.currOffset})
+
+	s.reusableNode = &n
+
+	return n, err
+}
+
+func (s *segmentCursorReplace) parseReplaceNode(offset nodeOffset) (segmentReplaceNode, error) {
+	r, err := s.segment.newNodeReader(offset, "segmentCursorReplace")
+	if err != nil {
+		return segmentReplaceNode{}, err
+	}
+	defer r.Release()
+
+	out, err := ParseReplaceNode(r, s.segment.secondaryIndexCount)
+	if out.tombstone {
+		return out, lsmkv.Deleted
+	}
+	return out, err
+}
+
+func (s *segmentCursorReplace) parseReplaceNodeInto(offset nodeOffset, buf []byte) error {
+	if s.segment.readFromMemory {
+		return s.parse(buf)
+	}
+
+	r, err := s.segment.newNodeReader(offset, "segmentCursorReplace")
+	if err != nil {
+		return err
+	}
+	defer r.Release()
+
+	err = ParseReplaceNodeIntoPread(r, s.segment.secondaryIndexCount, s.reusableNode)
+	if err != nil {
+		return err
+	}
+
+	if s.reusableNode.tombstone {
+		return lsmkv.Deleted
+	}
+
+	return nil
+}
+
+func (s *segmentCursorReplace) parse(in []byte) error {
+	if len(in) == 0 {
+		return lsmkv.NotFound
+	}
+
+	s.reusableBORW.ResetBuffer(in)
+
+	err := ParseReplaceNodeIntoMMAP(&s.reusableBORW, s.segment.secondaryIndexCount,
+		s.reusableNode)
+	if err != nil {
+		return err
+	}
+
+	if s.reusableNode.tombstone {
+		return lsmkv.Deleted
+	}
+
+	return nil
+}
+
+// segmentCursorReplaceReusable is a sequential cursor for the replace strategy
+// that reuses internal buffers across iterations to minimise per-key
+// allocations. Used by compaction (compactorReplace) and, via
+// reusableInnerCursorReplace, by the bucket-level reusable merge cursor. It is
+// the replace-strategy analogue of segmentCursorCollectionReusable.
+//
+// Ownership contract: the *segmentReplaceNode returned by first()/next()/seek()
+// is valid only until the next call on the same cursor; callers must not retain
+// the pointer across iterations. Each consumer (compaction's c1/c2, the merge
+// cursor's per-segment adapter) owns its own cursor, so the aliased node is
+// never shared across cursors.
+type segmentCursorReplaceReusable struct {
+	segment      *segment
+	currOffset   uint64
+	reusableNode segmentReplaceNode
+	reusableBORW byteops.ReadWriter
+	// valuePrefixLen > 0 enables digest mode: retain only that many value bytes.
+	// 0 means full-value parsing.
+	valuePrefixLen int
+	// pread-path: pre-allocated reader chain reused across all node reads to
+	// avoid allocating a MeteredReader+SectionReader+nodeReader per iteration.
+	preadOffset *offsetReader
+	preadReader *bufio.Reader
+}
+
+func (s *segment) newReplaceCursorReusable() *segmentCursorReplaceReusable {
+	return s.newReplaceCursorReusableWithPrefix(0)
+}
+
+// newReplaceCursorDigestReusable returns a reusable cursor in digest mode
+// (retains only the first valuePrefixLen bytes of each value).
+func (s *segment) newReplaceCursorDigestReusable(valuePrefixLen int) *segmentCursorReplaceReusable {
+	return s.newReplaceCursorReusableWithPrefix(valuePrefixLen)
+}
+
+func (s *segment) newReplaceCursorReusableWithPrefix(valuePrefixLen int) *segmentCursorReplaceReusable {
+	c := &segmentCursorReplaceReusable{
+		segment:    s,
+		currOffset: s.dataStartPos,
+		reusableNode: segmentReplaceNode{
+			secondaryIndexCount: s.secondaryIndexCount,
+			secondaryKeys:       make([][]byte, s.secondaryIndexCount),
+		},
+		reusableBORW:   byteops.NewReadWriter(nil),
+		valuePrefixLen: valuePrefixLen,
+	}
+	if !s.readFromMemory && s.contentFile != nil {
+		or := &offsetReader{ra: s.contentFile}
+		c.preadOffset = or
+		c.preadReader = acquireSegmentCursorReader(or)
+	}
+	return c
+}
+
+// releaseReader pools the read buffer (no-op for mmap cursors, idempotent). Call
+// only once the cursor is done (at Close), never mid-scan — it's reused at once.
+func (s *segmentCursorReplaceReusable) releaseReader() {
+	if s.preadReader == nil {
+		return
+	}
+	s.preadReader.Reset(nil) // drop the segment reference before the buffer is reused
+	segmentCursorReaderPool.Put(s.preadReader)
+	s.preadReader = nil
+	s.preadOffset = nil
+}
+
+func (s *segmentCursorReplaceReusable) keyCount() int {
+	return s.segment.index.KeyCount()
+}
+
+func (s *segmentCursorReplaceReusable) first() (*segmentReplaceNode, error) {
+	if s.segment.dataStartPos == s.segment.dataEndPos {
+		return nil, lsmkv.NotFound
+	}
+	s.currOffset = s.segment.dataStartPos
+	return s.parseInto()
+}
+
+func (s *segmentCursorReplaceReusable) next() (*segmentReplaceNode, error) {
+	nextOffset := s.currOffset + uint64(s.reusableNode.offset)
+	if nextOffset >= s.segment.dataEndPos {
+		return nil, lsmkv.NotFound
+	}
+	s.currOffset = nextOffset
+	return s.parseInto()
+}
+
+// seek positions at the first node with key >= the given key; next() then
+// continues sequentially. Returns lsmkv.NotFound past the highest key.
+func (s *segmentCursorReplaceReusable) seek(key []byte) (*segmentReplaceNode, error) {
+	node, err := s.segment.index.Seek(key)
+	if err != nil {
+		return nil, err
+	}
+	s.currOffset = node.Start
+	return s.parseInto()
+}
+
+func (s *segmentCursorReplaceReusable) parseInto() (*segmentReplaceNode, error) {
+	if s.segment.readFromMemory {
+		buf := s.segment.contents[s.currOffset:]
+		if len(buf) == 0 {
+			return nil, lsmkv.NotFound
+		}
+		s.reusableBORW.ResetBuffer(buf)
+		if s.valuePrefixLen > 0 {
+			if err := ParseReplaceNodeDigestIntoMMAP(&s.reusableBORW, s.segment.secondaryIndexCount, s.valuePrefixLen, &s.reusableNode); err != nil {
+				return &s.reusableNode, err
+			}
+		} else if err := ParseReplaceNodeIntoMMAP(&s.reusableBORW, s.segment.secondaryIndexCount, &s.reusableNode); err != nil {
+			return &s.reusableNode, err
+		}
+	} else {
+		s.preadOffset.off = int64(s.currOffset)
+		s.preadReader.Reset(s.preadOffset)
+		if s.valuePrefixLen > 0 {
+			if err := ParseReplaceNodeDigestIntoPread(s.preadReader, s.segment.secondaryIndexCount, s.valuePrefixLen, &s.reusableNode); err != nil {
+				return &s.reusableNode, err
+			}
+		} else if err := ParseReplaceNodeIntoPread(s.preadReader, s.segment.secondaryIndexCount, &s.reusableNode); err != nil {
+			return &s.reusableNode, err
+		}
+	}
+
+	if s.reusableNode.tombstone {
+		return &s.reusableNode, lsmkv.Deleted
+	}
+	return &s.reusableNode, nil
+}
+
+// reusableInnerCursorReplace adapts segmentCursorReplaceReusable to the
+// innerCursorReplace interface. Returned slices alias the reusable node and are
+// valid only until the next call; CursorReplace copies them out before advancing.
+type reusableInnerCursorReplace struct {
+	c *segmentCursorReplaceReusable
+}
+
+func nodeToKV(n *segmentReplaceNode, err error) ([]byte, []byte, error) {
+	if errors.Is(err, lsmkv.Deleted) {
+		// tombstone: key with nil value, so the merge can advance past it
+		return n.primaryKey, nil, err
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return n.primaryKey, n.value, nil
+}
+
+func (r *reusableInnerCursorReplace) first() ([]byte, []byte, error) {
+	return nodeToKV(r.c.first())
+}
+
+func (r *reusableInnerCursorReplace) next() ([]byte, []byte, error) {
+	return nodeToKV(r.c.next())
+}
+
+func (r *reusableInnerCursorReplace) seek(key []byte) ([]byte, []byte, error) {
+	return nodeToKV(r.c.seek(key))
+}
+
+// newReusableCursors mirrors newCursors but uses reusable per-segment cursors,
+// avoiding the per-node reader allocations of the default pread path.
+func (sg *SegmentGroup) newReusableCursors() ([]innerCursorReplace, func()) {
+	return sg.newReusableCursorsWithPrefix(0)
+}
+
+// newDigestReusableCursors mirrors newReusableCursors but builds digest-mode
+// per-segment cursors (see segmentCursorReplaceReusable.valuePrefixLen).
+func (sg *SegmentGroup) newDigestReusableCursors(valuePrefixLen int) ([]innerCursorReplace, func()) {
+	return sg.newReusableCursorsWithPrefix(valuePrefixLen)
+}
+
+func (sg *SegmentGroup) newReusableCursorsWithPrefix(valuePrefixLen int) ([]innerCursorReplace, func()) {
+	segments, release := sg.getConsistentViewOfSegments()
+
+	out := make([]innerCursorReplace, len(segments))
+	reusables := make([]*segmentCursorReplaceReusable, len(segments))
+	for i, segment := range segments {
+		var c *segmentCursorReplaceReusable
+		if valuePrefixLen > 0 {
+			c = segment.newReplaceCursorDigestReusable(valuePrefixLen)
+		} else {
+			c = segment.newReplaceCursorReusable()
+		}
+		out[i] = &reusableInnerCursorReplace{c: c}
+		reusables[i] = c
+	}
+
+	return out, func() {
+		for _, c := range reusables {
+			c.releaseReader()
+		}
+		release()
+	}
+}
