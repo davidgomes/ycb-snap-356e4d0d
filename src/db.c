@@ -3703,10 +3703,11 @@ int sortGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *
     keys[num].pos = 1; /* <sort-key> is always present. */
     keys[num++].flags = CMD_KEY_RO | CMD_KEY_ACCESS;
 
-    /* Search for STORE option. By default we consider options to don't
-     * have arguments, so if we find an unknown option name we scan the
-     * next. However there are options with 1 or 2 arguments, so we
-     * provide a list here in order to skip the right number of args. */
+    /* Search for STORE option. STORE is last-wins, matching sortCommand.
+     * Check STORE before BY/GET/LIMIT so a store key that looks like an
+     * option keyword is not treated as that option (which would skip the
+     * real last STORE). Unknown options are scanned one argument at a time.
+     * BY/GET/LIMIT take 1 or 2 arguments that must be skipped. */
     struct {
         char *name;
         int skip;
@@ -3718,17 +3719,18 @@ int sortGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *
     };
 
     for (i = 2; i < argc; i++) {
+        int leftargs = argc - i - 1;
+        if (!strcasecmp(argv[i]->ptr,"store") && leftargs >= 1) {
+            /* Do not increment "num": keep overwriting so the last STORE wins. */
+            found_store = 1;
+            keys[num].pos = i+1; /* <store-key> */
+            keys[num].flags = CMD_KEY_OW | CMD_KEY_UPDATE;
+            i++; /* Skip the store key so it is not parsed as BY/GET/LIMIT. */
+            continue;
+        }
         for (j = 0; skiplist[j].name != NULL; j++) {
             if (!strcasecmp(argv[i]->ptr,skiplist[j].name)) {
                 i += skiplist[j].skip;
-                break;
-            } else if (!strcasecmp(argv[i]->ptr,"store") && i+1 < argc) {
-                /* Note: we don't increment "num" here and continue the loop
-                 * to be sure to process the *last* "STORE" option if multiple
-                 * ones are provided. This is same behavior as SORT. */
-                found_store = 1;
-                keys[num].pos = i+1; /* <store-key> */
-                keys[num].flags = CMD_KEY_OW | CMD_KEY_UPDATE;
                 break;
             }
         }
@@ -3816,8 +3818,9 @@ int migrateGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResul
  * GEORADIUS key x y radius unit [WITHDIST] [WITHHASH] [WITHCOORD] [ASC|DESC]
  *                             [COUNT count] [STORE key|STOREDIST key]
  * GEORADIUSBYMEMBER key member radius unit ... options ...
- * 
- * This command has a fully defined keyspec, so returning flags isn't needed. */
+ *
+ * Repeated STORE/STOREDIST options are last-wins, matching georadiusGeneric.
+ * Keyspecs for those keywords are incomplete, so ACL falls back here. */
 int georadiusGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result) {
     int i, num;
     keyReference *keys;
@@ -3846,40 +3849,48 @@ int georadiusGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysRes
 
     /* Add all key positions to keys[] */
     keys[0].pos = 1;
-    keys[0].flags = 0;
+    keys[0].flags = CMD_KEY_RO | CMD_KEY_ACCESS;
     if(num > 1) {
          keys[1].pos = stored_key;
-         keys[1].flags = 0;
+         keys[1].flags = CMD_KEY_OW | CMD_KEY_UPDATE;
     }
     result->numkeys = num;
     return num;
 }
 
-/* XREAD [BLOCK <milliseconds>] [COUNT <count>] [GROUP <groupname> <ttl>]
- *       STREAMS key_1 key_2 ... key_N ID_1 ID_2 ... ID_N
+/* XREAD [BLOCK <milliseconds>] [COUNT <count>] [MAXCOUNT <count>]
+ *       [MAXSIZE <size>] STREAMS key_1 key_2 ... key_N ID_1 ID_2 ... ID_N
+ * XREADGROUP [GROUP <groupname> <consumer>] [CLAIM <min-idle-time>] [NOACK] ...
  *
- * This command has a fully defined keyspec, so returning flags isn't needed. */
+ * Options before STREAMS must be skipped so a group/consumer named STREAMS, or
+ * a STREAMS-like option argument, is not mistaken for the STREAMS keyword.
+ * The STREAMS keyspec is incomplete, so ACL falls back here. */
 int xreadGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result) {
     int i, num = 0;
     keyReference *keys;
     UNUSED(cmd);
 
-    /* We need to parse the options of the command in order to seek the first
-     * "STREAMS" string which is actually the option. This is needed because
-     * "STREAMS" could also be the name of the consumer group and even the
-     * name of the stream key. */
+    /* Parse options the same way xreadCommand does, so we find the STREAMS
+     * option rather than a group, consumer, or stream key named STREAMS. */
     int streams_pos = -1;
     for (i = 1; i < argc; i++) {
+        int moreargs = argc - i - 1;
         char *arg = argv[i]->ptr;
-        if (!strcasecmp(arg, "block")) {
+        if (!strcasecmp(arg, "block") && moreargs) {
             i++; /* Skip option argument. */
-        } else if (!strcasecmp(arg, "count")) {
+        } else if (!strcasecmp(arg, "count") && moreargs) {
             i++; /* Skip option argument. */
-        } else if (!strcasecmp(arg, "group")) {
-            i += 2; /* Skip option argument. */
+        } else if (!strcasecmp(arg, "maxcount") && moreargs) {
+            i++; /* Skip option argument. */
+        } else if (!strcasecmp(arg, "maxsize") && moreargs) {
+            i++; /* Skip option argument. */
+        } else if (!strcasecmp(arg, "claim") && moreargs) {
+            i++; /* Skip option argument. */
+        } else if (!strcasecmp(arg, "group") && moreargs >= 2) {
+            i += 2; /* Skip group name and consumer name. */
         } else if (!strcasecmp(arg, "noack")) {
             /* Nothing to do. */
-        } else if (!strcasecmp(arg, "streams")) {
+        } else if (!strcasecmp(arg, "streams") && moreargs) {
             streams_pos = i;
             break;
         } else {
@@ -3899,8 +3910,8 @@ int xreadGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult 
     keys = getKeysPrepareResult(result, num);
     for (i = streams_pos+1; i < argc-num; i++) {
         keys[i-streams_pos-1].pos = i;
-        keys[i-streams_pos-1].flags = 0; 
-    } 
+        keys[i-streams_pos-1].flags = CMD_KEY_RO | CMD_KEY_ACCESS;
+    }
     result->numkeys = num;
     return num;
 }

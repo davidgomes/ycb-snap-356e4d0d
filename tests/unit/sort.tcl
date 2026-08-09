@@ -120,6 +120,10 @@ foreach command {SORT SORT_RO} {
         r command getkeys sort abc store invalid store stillbad store def
     } {abc def}
 
+    test "SORT extracts last STORE when store key looks like an option" {
+        r command getkeys sort abc store by store def
+    } {abc def}
+
     test "SORT DESC" {
         assert_equal [lsort -decreasing -integer $result] [r sort tosort DESC]
     }

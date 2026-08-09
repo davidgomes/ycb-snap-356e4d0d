@@ -49,9 +49,11 @@
                 }
             },
             {
+                "notes": "STORE/STOREDIST are last-wins; the first keyword match is not necessarily the write target",
                 "flags": [
                     "OW",
-                    "UPDATE"
+                    "UPDATE",
+                    "INCOMPLETE"
                 ],
                 "begin_search": {
                     "keyword": {
@@ -68,9 +70,11 @@
                 }
             },
             {
+                "notes": "STORE/STOREDIST are last-wins; the first keyword match is not necessarily the write target",
                 "flags": [
                     "OW",
-                    "UPDATE"
+                    "UPDATE",
+                    "INCOMPLETE"
                 ],
                 "begin_search": {
                     "keyword": {

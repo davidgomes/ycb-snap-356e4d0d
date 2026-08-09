@@ -371,6 +371,14 @@ start_server {tags {"acl external:skip"}} {
         assert_equal "OK" [r ACL DRYRUN command-test SORT read STORE write]
         assert_match {*has no permissions to access the 'read' key*}  [r ACL DRYRUN command-test SORT read STORE read]
         assert_match {*has no permissions to access the 'write' key*}  [r ACL DRYRUN command-test SORT write STORE write]
+        # Repeated STORE is last-wins. A store key that looks like BY/GET/LIMIT
+        # must not derail key resolution so a permitted first store masks a forbidden last one.
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test SORT read STORE by STORE read2]
+        assert_equal "OK" [r ACL DRYRUN command-test SORT read STORE by STORE write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test SORT read STORE get STORE read2]
+        assert_equal "OK" [r ACL DRYRUN command-test SORT read STORE get STORE write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test SORT read STORE limit STORE read2]
+        assert_equal "OK" [r ACL DRYRUN command-test SORT read STORE limit STORE write2]
 
         # Test EVAL, which uses the numkey keyspec (Also test EVAL_RO)
         assert_equal "OK" [r ACL DRYRUN command-test EVAL "" 1 rw1]
@@ -395,6 +403,47 @@ start_server {tags {"acl external:skip"}} {
         assert_equal "OK" [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M]
         assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUS read1 longitude latitude radius M STORE read2]
         assert_match {*has no permissions to access the 'write1' key*} [r ACL DRYRUN command-test GEORADIUS write1 longitude latitude radius M STORE write2]
+        # Repeated STORE/STOREDIST is last-wins: ACL must check the last write target.
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STORE write1 STORE read2]
+        assert_equal "OK" [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STORE read1 STORE write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STOREDIST write1 STOREDIST read2]
+        assert_equal "OK" [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STOREDIST read1 STOREDIST write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STORE write1 STOREDIST read2]
+        assert_equal "OK" [r ACL DRYRUN command-test GEORADIUS read longitude latitude radius M STOREDIST read1 STORE write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUSBYMEMBER read member radius M STORE write1 STORE read2]
+        assert_equal "OK" [r ACL DRYRUN command-test GEORADIUSBYMEMBER read member radius M STORE read1 STORE write2]
+        assert_match {*has no permissions to access the 'read2' key*} [r ACL DRYRUN command-test GEORADIUSBYMEMBER read member radius M STOREDIST write1 STOREDIST read2]
+        assert_equal "OK" [r ACL DRYRUN command-test GEORADIUSBYMEMBER read member radius M STOREDIST read1 STOREDIST write2]
+
+        # XREAD/XREADGROUP: stream keys are the arguments after the real STREAMS option.
+        # A consumer/group named STREAMS, or options before STREAMS, must not make ACL
+        # validate the wrong argument.
+        assert_equal "OK" [r ACL DRYRUN command-test XREAD STREAMS read $]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREAD STREAMS write $]
+        assert_equal "OK" [r ACL DRYRUN command-test XREAD COUNT 1 STREAMS read $]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREAD COUNT 1 STREAMS write $]
+        assert_equal "OK" [r ACL DRYRUN command-test XREAD MAXCOUNT 1 STREAMS read $]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREAD MAXCOUNT 1 STREAMS write $]
+        assert_equal "OK" [r ACL DRYRUN command-test XREAD MAXSIZE 1 STREAMS read $]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREAD MAXSIZE 1 STREAMS write $]
+        assert_equal "OK" [r ACL DRYRUN command-test XREAD COUNT 1 MAXCOUNT 2 MAXSIZE 10 BLOCK 0 STREAMS read $]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREAD COUNT 1 MAXCOUNT 2 MAXSIZE 10 BLOCK 0 STREAMS write $]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP STREAMS consumer STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP STREAMS consumer STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup STREAMS STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup STREAMS STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c COUNT 1 STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c COUNT 1 STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c MAXCOUNT 1 STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c MAXCOUNT 1 STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c MAXSIZE 1 STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c MAXSIZE 1 STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c CLAIM 0 STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c CLAIM 0 STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c NOACK STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP mygroup c NOACK STREAMS write >]
+        assert_equal "OK" [r ACL DRYRUN command-test XREADGROUP GROUP STREAMS STREAMS COUNT 1 CLAIM 0 NOACK STREAMS read >]
+        assert_match {*has no permissions to access the 'write' key*} [r ACL DRYRUN command-test XREADGROUP GROUP STREAMS STREAMS COUNT 1 CLAIM 0 NOACK STREAMS write >]
     }
 
     # Existence test commands are not marked as access since they are the result

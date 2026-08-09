@@ -151,6 +151,7 @@ start_server {tags {"introspection"}} {
         assert_equal {{k1 {OW update}} {k2 {OW update}}} [r command getkeysandflags mset k1 v1 k2 v2]
         assert_equal {{k1 {RW access delete}} {k2 {RW insert}}} [r command getkeysandflags LMOVE k1 k2 left right]
         assert_equal {{k1 {RO access}} {k2 {OW update}}} [r command getkeysandflags sort k1 store k2]
+        assert_equal {{k1 {RO access}} {k2 {OW update}}} [r command getkeysandflags sort k1 store by store k2]
         assert_equal {{k1 {RW update}}} [r command getkeysandflags set k1 v1 IFEQ v1]
         assert_equal {{k1 {RW access update}}} [r command getkeysandflags set k1 v1 GET]
         assert_equal {{k1 {RM delete}}} [r command getkeysandflags delex k1]
@@ -171,6 +172,26 @@ start_server {tags {"introspection"}} {
 
     test {COMMAND GETKEYS MEMORY USAGE} {
         assert_equal {key} [r command getkeys memory usage key]
+    }
+
+    test {COMMAND GETKEYS GEORADIUS last-wins STORE/STOREDIST} {
+        assert_equal {src dst} [r command getkeys GEORADIUS src 0 0 1 m STORE dst]
+        assert_equal {src dst2} [r command getkeys GEORADIUS src 0 0 1 m STORE dst1 STORE dst2]
+        assert_equal {src dst2} [r command getkeys GEORADIUS src 0 0 1 m STOREDIST dst1 STOREDIST dst2]
+        assert_equal {src dst2} [r command getkeys GEORADIUS src 0 0 1 m STORE dst1 STOREDIST dst2]
+        assert_equal {src dst2} [r command getkeys GEORADIUSBYMEMBER src member 1 m STORE dst1 STORE dst2]
+    }
+
+    test {COMMAND GETKEYS XREAD STREAMS after options} {
+        assert_equal {s1} [r command getkeys XREAD STREAMS s1 $]
+        assert_equal {s1} [r command getkeys XREAD COUNT 1 STREAMS s1 $]
+        assert_equal {s1} [r command getkeys XREAD MAXCOUNT 1 STREAMS s1 $]
+        assert_equal {s1} [r command getkeys XREAD MAXSIZE 1 STREAMS s1 $]
+        assert_equal {s1 s2} [r command getkeys XREAD COUNT 1 MAXCOUNT 2 MAXSIZE 10 BLOCK 0 STREAMS s1 s2 $ $]
+        assert_equal {s1} [r command getkeys XREADGROUP GROUP STREAMS consumer STREAMS s1 >]
+        assert_equal {s1} [r command getkeys XREADGROUP GROUP mygroup STREAMS STREAMS s1 >]
+        assert_equal {s1} [r command getkeys XREADGROUP GROUP mygroup c COUNT 1 CLAIM 0 NOACK STREAMS s1 >]
+        assert_equal {s1} [r command getkeys XREADGROUP GROUP STREAMS STREAMS MAXCOUNT 1 MAXSIZE 1 STREAMS s1 >]
     }
 
     test {COMMAND GETKEYS XGROUP} {
