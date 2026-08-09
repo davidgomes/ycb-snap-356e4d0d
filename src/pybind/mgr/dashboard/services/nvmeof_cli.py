@@ -340,6 +340,8 @@ class AnnotatedDataTextOutputFormatter(OutputFormatter):
 
 class NvmeofCLICommand(DBCLICommand):
     desc: str
+    # Built-in CLI arguments that are never required on nvmeof commands.
+    BUILTIN_CLI_ARGS = frozenset({'format'})
 
     def __init__(self,
                  prefix,
@@ -399,6 +401,26 @@ class NvmeofCLICommand(DBCLICommand):
                 defaults[name] = param.default
 
         return defaults
+
+    def _cli_flag_name(self, name: str) -> str:
+        return f"--{name.replace('_', '-')}"
+
+    def _get_missing_required_parameter(self, cmd_dict: Dict[str, Any]) -> Optional[str]:
+        """Return the first required CLI parameter missing from the invocation."""
+        if self.func is None:
+            return None
+
+        sig = inspect.signature(self.func)
+        for name, param in sig.parameters.items():
+            if name in DBCLICommand.KNOWN_ARGS or name in self.BUILTIN_CLI_ARGS:
+                continue
+            if name not in self.arg_spec:
+                continue
+            if param.default is not inspect.Parameter.empty:
+                continue
+            if cmd_dict.get(name) is None:
+                return name
+        return None
 
     def _stringify(self, value: Any) -> str:
         if isinstance(value, (bytes, bytearray)):
@@ -500,6 +522,13 @@ class NvmeofCLICommand(DBCLICommand):
              inbuf: Optional[str] = None) -> HandleCommandResult:
         deprecated_warnings = ''
         try:
+            missing = self._get_missing_required_parameter(cmd_dict)
+            if missing is not None:
+                return HandleCommandResult(
+                    -errno.EINVAL, '',
+                    f"missing required parameter: {self._cli_flag_name(missing)}"
+                )
+
             out_format = cmd_dict.get('format')
             args_map = self._args_map_from_argspec(cmd_dict, inbuf)
 

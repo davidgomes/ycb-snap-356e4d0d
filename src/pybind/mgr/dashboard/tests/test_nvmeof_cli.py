@@ -207,6 +207,198 @@ class TestNvmeofCLICommand:
         assert test_alias not in NvmeofCLICommand.COMMANDS
 
 
+class TestNvmeofCLICommandRequiredParams:
+    @staticmethod
+    def _cleanup(*cmds):
+        for cmd in cmds:
+            NvmeofCLICommand.COMMANDS.pop(cmd, None)
+
+    def test_missing_required_parameter_returns_einval(self, base_call_mock):
+        test_cmd = "nvmeof required param missing"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str, gw_group: Optional[str] = None):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(MagicMock(), {})
+            assert isinstance(result, HandleCommandResult)
+            assert result.retval == -errno.EINVAL
+            assert result.stdout == ''
+            assert result.stderr == "missing required parameter: --nqn"
+            base_call_mock.assert_not_called()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_missing_required_parameter_uses_hyphenated_flag(self, base_call_mock):
+        test_cmd = "nvmeof required host name missing"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, host_name: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(MagicMock(), {})
+            assert result.retval == -errno.EINVAL
+            assert result.stdout == ''
+            assert result.stderr == "missing required parameter: --host-name"
+            base_call_mock.assert_not_called()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_optional_parameters_are_not_required(self, base_call_mock):
+        test_cmd = "nvmeof optional params ok"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str,  # pylint: disable=unused-argument
+               trsvcid: int = 4420,  # pylint: disable=unused-argument
+               gw_group: Optional[str] = None):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(
+                MagicMock(),
+                {"nqn": "nqn.test"}
+            )
+            assert result.retval == 0
+            assert result.stderr == ''
+            base_call_mock.assert_called_once()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_builtin_format_arg_is_not_required(self, base_call_mock):
+        test_cmd = "nvmeof builtin format not required"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(
+                MagicMock(),
+                {"nqn": "nqn.test", "format": "json"}
+            )
+            assert result.retval == 0
+            assert result.stderr == ''
+            base_call_mock.assert_called_once()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_omitting_format_does_not_report_format_as_missing(self, base_call_mock):
+        test_cmd = "nvmeof omit format still missing nqn"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(MagicMock(), {})
+            assert result.retval == -errno.EINVAL
+            assert result.stderr == "missing required parameter: --nqn"
+            assert "format" not in result.stderr
+            base_call_mock.assert_not_called()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_known_inbuf_arg_is_not_required(self, base_call_mock):
+        test_cmd = "nvmeof inbuf not required"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, inbuf, nqn: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(
+                MagicMock(),
+                {"nqn": "nqn.test"}
+            )
+            assert result.retval == 0
+            assert result.stderr == ''
+            base_call_mock.assert_called_once()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_all_required_parameters_succeed(self, base_call_mock):
+        test_cmd = "nvmeof all required params"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str, host_name: str,  # pylint: disable=unused-argument
+               trsvcid: int = 4420):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(
+                MagicMock(),
+                {"nqn": "nqn.test", "host_name": "host1"}
+            )
+            assert result.retval == 0
+            assert result.stderr == ''
+            base_call_mock.assert_called_once()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_reports_first_missing_required_parameter(self, base_call_mock):
+        test_cmd = "nvmeof first missing required"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model)
+        def fn(self, nqn: str, host_name: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_cmd].call(
+                MagicMock(),
+                {"nqn": "nqn.test"}
+            )
+            assert result.retval == -errno.EINVAL
+            assert result.stderr == "missing required parameter: --host-name"
+            base_call_mock.assert_not_called()
+        finally:
+            self._cleanup(test_cmd)
+
+    def test_alias_also_rejects_missing_required_parameter(self, base_call_mock):
+        test_cmd = "nvmeof required alias main"
+        test_alias = "nvmeof required alias alias"
+
+        class Model(NamedTuple):
+            status: str
+
+        @NvmeofCLICommand(test_cmd, Model, alias=test_alias)
+        def fn(self, nqn: str):  # pylint: disable=unused-argument
+            return {"status": "ok"}
+
+        try:
+            result = NvmeofCLICommand.COMMANDS[test_alias].call(MagicMock(), {})
+            assert result.retval == -errno.EINVAL
+            assert result.stderr == "missing required parameter: --nqn"
+            base_call_mock.assert_not_called()
+        finally:
+            self._cleanup(test_cmd, test_alias)
+
+
 class TestNvmeofCLICommandSuccessMessage:
     # pylint: disable=unused-argument, unused-variable
 
