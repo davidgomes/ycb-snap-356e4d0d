@@ -134,6 +134,7 @@ envoy_cc_library(
         ":utility_lib",
         "//envoy/common:time_interface",
         "//source/common/common:cancel_wrapper_lib",
+        "//source/common/common:lock_guard_lib",
     ],
 )
 

@@ -111,6 +111,7 @@ envoy_cc_test(
         "//test/mocks/server:factory_context_mocks",
         "//test/test_common:environment_lib",
         "//test/test_common:test_runtime_lib",
+        "//test/test_common:thread_factory_for_test_lib",
     ],
 )
 
