@@ -1,0 +1,1745 @@
+// Copyright 2023 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package aggfuncs
+
+import (
+	"bytes"
+	"math/rand"
+	"testing"
+
+	"github.com/pingcap/tidb/pkg/parser/mysql"
+	"github.com/pingcap/tidb/pkg/types"
+	"github.com/pingcap/tidb/pkg/util/chunk"
+	"github.com/pingcap/tidb/pkg/util/hack"
+	"github.com/stretchr/testify/require"
+)
+
+var testLongStr1 string = getLongString("平352p凯额6辰c")
+var testLongStr2 string = getLongString("123a啊f24f去rsgvsfg")
+
+func getChunk() *chunk.Chunk {
+	fieldTypes := make([]*types.FieldType, 1)
+	fieldTypes[0] = types.NewFieldType(mysql.TypeBit)
+	return chunk.NewChunkWithCapacity(fieldTypes, 100)
+}
+
+func getLongString(originStr string) string {
+	returnStr := originStr
+	for range 10 {
+		returnStr += returnStr
+	}
+	return returnStr
+}
+
+func getLargeRandBuffer() []byte {
+	byteLen := 10000
+	ret := make([]byte, byteLen)
+	randStart := rand.Int31()
+	for i := range byteLen {
+		ret[i] = byte((int(randStart) + i) % 8)
+	}
+	return ret
+}
+
+type bufferSizeChecker struct {
+	lastCap int
+}
+
+func newBufferSizeChecker() *bufferSizeChecker {
+	return &bufferSizeChecker{lastCap: -1}
+}
+
+// We need to ensure that buffer in `SerializeHelper` should be enlarged
+// when it serialize an object whose size is larger than it's capacity.
+func (b *bufferSizeChecker) checkBufferCapacity(helper *SerializeHelper) bool {
+	newCap := cap(helper.buf)
+	retVal := (newCap > b.lastCap)
+	b.lastCap = newCap
+	return retVal
+}
+
+func TestPartialResult4Count(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4Count{-123, 0, 123}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4Count)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4Count(*(*partialResult4Count)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4Count, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4Count(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4Count)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinInt(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinInt{
+		{val: -123, isNull: true},
+		{val: 0, isNull: false},
+		{val: 123, isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinInt)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinInt(*(*partialResult4MaxMinInt)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinInt, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinInt(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinInt)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinUint(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinUint{
+		{val: 0, isNull: true},
+		{val: 1, isNull: false},
+		{val: 2, isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinUint)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinUint(*(*partialResult4MaxMinUint)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinUint, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinUint(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinUint)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinDecimal(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinDecimal{
+		{val: *types.NewDecFromInt(0), isNull: true},
+		{val: *types.NewDecFromUint(123456), isNull: false},
+		{val: *types.NewDecFromInt(99999), isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinDecimal)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinDecimal(*(*partialResult4MaxMinDecimal)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinDecimal, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinDecimal(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinDecimal)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinFloat32(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinFloat32{
+		{val: -123.123, isNull: true},
+		{val: 0.0, isNull: false},
+		{val: 123.123, isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinFloat32)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinFloat32(*(*partialResult4MaxMinFloat32)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinFloat32, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinFloat32(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinFloat32)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinFloat64(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinFloat64{
+		{val: -123.123, isNull: true},
+		{val: 0.0, isNull: false},
+		{val: 123.123, isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinFloat64)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinFloat64(*(*partialResult4MaxMinFloat64)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinFloat64, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinFloat64(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinFloat64)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinTime(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinTime{
+		{val: types.NewTime(123, 10, 9), isNull: true},
+		{val: types.NewTime(0, 0, 0), isNull: false},
+		{val: types.NewTime(9876, 12, 10), isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinTime)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinTime(*(*partialResult4MaxMinTime)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinTime, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinTime(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinTime)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinString(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinString{
+		{val: string("12312412312"), isNull: true},
+		{val: testLongStr1, isNull: false},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinString)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinString(*(*partialResult4MaxMinString)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinString, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinString(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinString)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinJSON(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinJSON{
+		{val: types.BinaryJSON{TypeCode: 3, Value: []byte{}}, isNull: false},
+		{val: types.BinaryJSON{TypeCode: 6, Value: getLargeRandBuffer()}, isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinJSON)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinJSON(*(*partialResult4MaxMinJSON)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinJSON, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinJSON(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinJSON)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinVectorFloat32(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	largeVecData := make([]float32, 1024)
+	for i := range largeVecData {
+		largeVecData[i] = float32(i)
+	}
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinVectorFloat32{
+		{val: types.MustCreateVectorFloat32([]float32{1, 2, 3}), isNull: false},
+		{val: types.MustCreateVectorFloat32(largeVecData), isNull: true},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinVectorFloat32)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinVectorFloat32(*(*partialResult4MaxMinVectorFloat32)(pr))
+		chk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinVectorFloat32, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinVectorFloat32(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := 0; i < testDataNum; i++ {
+		require.Equal(t, *(*partialResult4MaxMinVectorFloat32)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinEnum(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinEnum{
+		{val: types.Enum{Name: string(""), Value: 123}, isNull: true},
+		{val: types.Enum{Name: testLongStr1, Value: 0}, isNull: false},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinEnum)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinEnum(*(*partialResult4MaxMinEnum)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinEnum, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinEnum(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinEnum)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4MaxMinSet(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4MaxMinSet{
+		{val: types.Set{Name: string(""), Value: 123}, isNull: true},
+		{val: types.Set{Name: testLongStr1, Value: 0}, isNull: false},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4MaxMinSet)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4MaxMinSet(*(*partialResult4MaxMinSet)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4MaxMinSet, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4MaxMinSet(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4MaxMinSet)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4AvgDecimal(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4AvgDecimal{
+		{sum: *types.NewDecFromInt(0), count: 0},
+		{sum: *types.NewDecFromInt(12345), count: 123},
+		{sum: *types.NewDecFromInt(87654), count: -123},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4AvgDecimal)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4AvgDecimal(*(*partialResult4AvgDecimal)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4AvgDecimal, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4AvgDecimal(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4AvgDecimal)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4AvgFloat64(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4AvgFloat64{
+		{sum: 0.0, count: 0},
+		{sum: 123.123, count: 123},
+		{sum: -123.123, count: -123},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4AvgFloat64)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4AvgFloat64(*(*partialResult4AvgFloat64)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4AvgFloat64, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4AvgFloat64(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4AvgFloat64)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4SumDecimal(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4SumDecimal{
+		{val: *types.NewDecFromInt(0), notNullRowCount: 0},
+		{val: *types.NewDecFromInt(12345), notNullRowCount: 123},
+		{val: *types.NewDecFromInt(87654), notNullRowCount: -123},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4SumDecimal)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4SumDecimal(*(*partialResult4SumDecimal)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4SumDecimal, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4SumDecimal(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4SumDecimal)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4SumFloat64(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4SumFloat64{
+		{val: 0.0, notNullRowCount: 0},
+		{val: 123.123, notNullRowCount: 123},
+		{val: -123.123, notNullRowCount: -123},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4SumFloat64)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4SumFloat64(*(*partialResult4SumFloat64)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4SumFloat64, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4SumFloat64(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4SumFloat64)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4DistinctAgg(t *testing.T) {
+	t.Run("count int", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4Int{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountDistinctInt)(pr).valSet.Insert(1)
+		(*partialResult4CountDistinctInt)(pr).valSet.Insert(-2)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountDistinctInt)(pr).valSet.M, (*partialResult4CountDistinctInt)(restored).valSet.M)
+	})
+
+	t.Run("count real", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4Real{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountDistinctReal)(pr).valSet.Insert(1.25)
+		(*partialResult4CountDistinctReal)(pr).valSet.Insert(-2.5)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountDistinctReal)(pr).valSet.M, (*partialResult4CountDistinctReal)(restored).valSet.M)
+	})
+
+	t.Run("count decimal", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4Decimal{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountDistinctDecimal)(pr).valSet.Insert("decimal-key")
+		(*partialResult4CountDistinctDecimal)(pr).valSet.Insert(string([]byte{0, 1, 2, 'x'}))
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountDistinctDecimal)(pr).valSet.M, (*partialResult4CountDistinctDecimal)(restored).valSet.M)
+	})
+
+	t.Run("count duration", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4Duration{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountDistinctDuration)(pr).valSet.Insert(123)
+		(*partialResult4CountDistinctDuration)(pr).valSet.Insert(-456)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountDistinctDuration)(pr).valSet.M, (*partialResult4CountDistinctDuration)(restored).valSet.M)
+	})
+
+	t.Run("count string", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4String{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountDistinctString)(pr).valSet.Insert("")
+		(*partialResult4CountDistinctString)(pr).valSet.Insert(testLongStr1)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountDistinctString)(pr).valSet.M, (*partialResult4CountDistinctString)(restored).valSet.M)
+	})
+
+	t.Run("count multi args", func(t *testing.T) {
+		aggFunc := &baseCountDistinct4MultiArgs{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4CountWithDistinct)(pr).valSet.Insert("arg1\x00arg2")
+		(*partialResult4CountWithDistinct)(pr).valSet.Insert(testLongStr2)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4CountWithDistinct)(pr).valSet.M, (*partialResult4CountWithDistinct)(restored).valSet.M)
+	})
+
+	t.Run("approx count distinct", func(t *testing.T) {
+		aggFunc := &approxCountDistinctOriginal{}
+		pr := newAggPartialResult(t, aggFunc)
+		approxPr := (*partialResult4ApproxCountDistinct)(pr)
+		for _, val := range []uint64{0, 1, 2, 1, 1024, 1<<32 - 1} {
+			approxPr.InsertHash64(val)
+		}
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		restoredApproxPr := (*partialResult4ApproxCountDistinct)(restored)
+		require.Equal(t, approxPr.Serialize(), restoredApproxPr.Serialize())
+		require.Equal(t, approxPr.fixedSize(), restoredApproxPr.fixedSize())
+	})
+
+	t.Run("avg decimal", func(t *testing.T) {
+		aggFunc := &baseAvgDistinct4Decimal{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4AvgDistinctDecimal)(pr).valSet.Insert("d1", types.NewDecFromInt(10))
+		(*partialResult4AvgDistinctDecimal)(pr).valSet.Insert("d2", types.NewDecFromInt(-20))
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4AvgDistinctDecimal)(pr).valSet.M, (*partialResult4AvgDistinctDecimal)(restored).valSet.M)
+	})
+
+	t.Run("avg float64", func(t *testing.T) {
+		aggFunc := &baseAvgDistinct4Float64{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4AvgDistinctFloat64)(pr).valSet.Insert(10.5)
+		(*partialResult4AvgDistinctFloat64)(pr).valSet.Insert(-20.75)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4AvgDistinctFloat64)(pr).valSet.M, (*partialResult4AvgDistinctFloat64)(restored).valSet.M)
+	})
+
+	t.Run("sum decimal", func(t *testing.T) {
+		aggFunc := &baseSumDistinct4Decimal{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4SumDistinctDecimal)(pr).valSet.Insert("s1", types.NewDecFromInt(100))
+		(*partialResult4SumDistinctDecimal)(pr).valSet.Insert("s2", types.NewDecFromInt(-200))
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4SumDistinctDecimal)(pr).valSet.M, (*partialResult4SumDistinctDecimal)(restored).valSet.M)
+	})
+
+	t.Run("sum float64", func(t *testing.T) {
+		aggFunc := &baseSumDistinct4Float64{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4SumDistinctFloat64)(pr).valSet.Insert(100.5)
+		(*partialResult4SumDistinctFloat64)(pr).valSet.Insert(-200.75)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4SumDistinctFloat64)(pr).valSet.M, (*partialResult4SumDistinctFloat64)(restored).valSet.M)
+	})
+
+	t.Run("sum int64", func(t *testing.T) {
+		aggFunc := &sumDistinctInt64{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4SumDistinctInt64)(pr).valSet.Insert(100)
+		(*partialResult4SumDistinctInt64)(pr).valSet.Insert(-200)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4SumDistinctInt64)(pr).valSet.M, (*partialResult4SumDistinctInt64)(restored).valSet.M)
+	})
+
+	t.Run("sum uint64", func(t *testing.T) {
+		aggFunc := &sumDistinctUint64{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4SumDistinctUint64)(pr).valSet.Insert(100)
+		// Unsigned values are stored as int64 bit-pattern keys.
+		(*partialResult4SumDistinctUint64)(pr).valSet.Insert(-1)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4SumDistinctUint64)(pr).valSet.M, (*partialResult4SumDistinctUint64)(restored).valSet.M)
+	})
+
+	t.Run("variance float64", func(t *testing.T) {
+		aggFunc := &varPopOriginal4DistinctFloat64{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4VarPopDistinctFloat64)(pr).valSet.Insert(1.5)
+		(*partialResult4VarPopDistinctFloat64)(pr).valSet.Insert(3.5)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4VarPopDistinctFloat64)(pr).valSet.M, (*partialResult4VarPopDistinctFloat64)(restored).valSet.M)
+	})
+
+	t.Run("group concat", func(t *testing.T) {
+		aggFunc := &baseGroupConcatDistinct4String{}
+		pr := newAggPartialResult(t, aggFunc)
+		(*partialResult4GroupConcatDistinct)(pr).valSet.Insert("k1", "v1")
+		(*partialResult4GroupConcatDistinct)(pr).valSet.Insert(testLongStr1, testLongStr2)
+
+		restored := roundTripAggPartialResult(t, aggFunc, pr)
+		require.Equal(t, (*partialResult4GroupConcatDistinct)(pr).valSet.M, (*partialResult4GroupConcatDistinct)(restored).valSet.M)
+		require.NotNil(t, (*partialResult4GroupConcatDistinct)(restored).valsBuf)
+	})
+
+	t.Run("non-distinct variance", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			aggFunc AggFunc
+		}{
+			{name: "var pop", aggFunc: &varPop4Float64{}},
+			{name: "var samp", aggFunc: &varSamp4Float64{}},
+			{name: "stddev pop", aggFunc: &stdDevPop4Float64{}},
+			{name: "stddev samp", aggFunc: &stddevSamp4Float64{}},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				pr := newAggPartialResult(t, test.aggFunc)
+				*(*partialResult4VarPopFloat64)(pr) = partialResult4VarPopFloat64{
+					count:    3,
+					sum:      7.5,
+					variance: 4.25,
+				}
+
+				restored := roundTripAggPartialResult(t, test.aggFunc, pr)
+				require.Equal(t, *(*partialResult4VarPopFloat64)(pr), *(*partialResult4VarPopFloat64)(restored))
+			})
+		}
+	})
+
+	t.Run("approx percentile", func(t *testing.T) {
+		t.Run("no state", func(t *testing.T) {
+			aggFunc := &basePercentile{}
+			chk := getChunk()
+			aggFunc.SerializePartialResult(nil, chk, NewSerializeHelper())
+
+			restored, memDelta := aggFunc.DeserializePartialResult(chk)
+			require.Len(t, restored, 1)
+			require.Nil(t, restored[0])
+			require.Zero(t, memDelta)
+			require.NotPanics(t, func() {
+				_, err := aggFunc.MergePartialResult(nil, restored[0], nil)
+				require.NoError(t, err)
+			})
+		})
+
+		t.Run("int", func(t *testing.T) {
+			aggFunc := &percentileOriginal4Int{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4PercentileInt)(pr) = partialResult4PercentileInt{-3, 0, 10}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			require.Equal(t, *(*partialResult4PercentileInt)(pr), *(*partialResult4PercentileInt)(restored))
+		})
+
+		t.Run("real", func(t *testing.T) {
+			aggFunc := &percentileOriginal4Real{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4PercentileReal)(pr) = partialResult4PercentileReal{-1.5, 2.25}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			require.Equal(t, *(*partialResult4PercentileReal)(pr), *(*partialResult4PercentileReal)(restored))
+		})
+
+		t.Run("decimal", func(t *testing.T) {
+			aggFunc := &percentileOriginal4Decimal{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4PercentileDecimal)(pr) = partialResult4PercentileDecimal{
+				*types.NewDecFromInt(-2),
+				*types.NewDecFromInt(11),
+			}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			require.Equal(t, *(*partialResult4PercentileDecimal)(pr), *(*partialResult4PercentileDecimal)(restored))
+		})
+
+		t.Run("time", func(t *testing.T) {
+			aggFunc := &percentileOriginal4Time{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4PercentileTime)(pr) = partialResult4PercentileTime{
+				types.TimeFromDays(1),
+				types.TimeFromDays(365),
+			}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			require.Equal(t, *(*partialResult4PercentileTime)(pr), *(*partialResult4PercentileTime)(restored))
+		})
+
+		t.Run("duration", func(t *testing.T) {
+			aggFunc := &percentileOriginal4Duration{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4PercentileDuration)(pr) = partialResult4PercentileDuration{
+				{Duration: -123, Fsp: 2},
+				{Duration: 456, Fsp: 4},
+			}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			require.Equal(t, *(*partialResult4PercentileDuration)(pr), *(*partialResult4PercentileDuration)(restored))
+		})
+	})
+
+	t.Run("vector", func(t *testing.T) {
+		vector := types.MustCreateVectorFloat32([]float32{-1.5, 0, 2.25})
+
+		t.Run("first row", func(t *testing.T) {
+			aggFunc := &firstRow4VectorFloat32{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4FirstRowVectorFloat32)(pr) = partialResult4FirstRowVectorFloat32{
+				basePartialResult4FirstRow: basePartialResult4FirstRow{gotFirstRow: true},
+				val:                        vector,
+			}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			restoredResult := (*partialResult4FirstRowVectorFloat32)(restored)
+			require.Equal(t, (*partialResult4FirstRowVectorFloat32)(pr).basePartialResult4FirstRow, restoredResult.basePartialResult4FirstRow)
+			require.Equal(t, vector.ZeroCopySerialize(), restoredResult.val.ZeroCopySerialize())
+		})
+
+		t.Run("max min", func(t *testing.T) {
+			aggFunc := &maxMin4VectorFloat32{}
+			pr := newAggPartialResult(t, aggFunc)
+			*(*partialResult4MaxMinVectorFloat32)(pr) = partialResult4MaxMinVectorFloat32{val: vector}
+
+			restored := roundTripAggPartialResult(t, aggFunc, pr)
+			restoredResult := (*partialResult4MaxMinVectorFloat32)(restored)
+			require.False(t, restoredResult.isNull)
+			require.Equal(t, vector.ZeroCopySerialize(), restoredResult.val.ZeroCopySerialize())
+		})
+	})
+}
+
+func newAggPartialResult(t *testing.T, aggFunc AggFunc) PartialResult {
+	pr, memDelta := aggFunc.AllocPartialResult()
+	require.NotNil(t, pr)
+	require.Positive(t, memDelta)
+	return pr
+}
+
+func roundTripAggPartialResult(t *testing.T, aggFunc AggFunc, pr PartialResult) PartialResult {
+	serializeHelper := NewSerializeHelper()
+	chunk := getChunk()
+	aggFunc.SerializePartialResult(pr, chunk, serializeHelper)
+
+	restored, memDelta := aggFunc.DeserializePartialResult(chunk)
+	chunk.Column(0).DestroyDataForTest()
+
+	require.Len(t, restored, 1)
+	require.Positive(t, memDelta)
+	return restored[0]
+}
+
+func TestBasePartialResult4GroupConcat(t *testing.T) {
+	var serializeHelper = NewSerializeHelper()
+	serializeHelper.buf = make([]byte, 0)
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []basePartialResult4GroupConcat{
+		{valsBuf: bytes.NewBufferString("123"), buffer: nil},
+		{valsBuf: bytes.NewBufferString(""), buffer: bytes.NewBufferString("")},
+		{valsBuf: bytes.NewBufferString(""), buffer: bytes.NewBufferString(testLongStr1)},
+		{valsBuf: bytes.NewBufferString(""), buffer: bytes.NewBufferString(testLongStr2)},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(basePartialResult4GroupConcat)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializeBasePartialResult4GroupConcat(*(*basePartialResult4GroupConcat)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]basePartialResult4GroupConcat, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializeBasePartialResult4GroupConcat(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		if (*basePartialResult4GroupConcat)(serializedPartialResults[i]).buffer != nil {
+			require.Equal(t, (*basePartialResult4GroupConcat)(serializedPartialResults[i]).buffer.String(), deserializedPartialResults[i].buffer.String())
+		} else {
+			require.Equal(t, (*bytes.Buffer)(nil), deserializedPartialResults[i].buffer)
+		}
+	}
+}
+
+func TestPartialResult4BitFunc(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4BitFunc{0, 1, 2}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4BitFunc)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4BitFunc(*(*partialResult4BitFunc)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4BitFunc, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4BitFunc(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4BitFunc)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4JsonArrayagg(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4JsonArrayagg{
+		{entries: []any{int64(1), float64(1.1), "", true, types.Opaque{TypeCode: 1, Buf: getLargeRandBuffer()}, types.NewTime(9876, 12, 10)}},
+		{entries: []any{int64(1), float64(1.1), false, types.NewDuration(1, 2, 3, 4, 5), testLongStr1}},
+		{entries: []any{"dw啊q", float64(-1.1), int64(0), types.NewDuration(1, 2, 3, 4, 5), types.NewTime(123, 1, 2), testLongStr1, types.BinaryJSON{TypeCode: 1, Value: []byte(testLongStr2)}, types.Opaque{TypeCode: 6, Buf: getLargeRandBuffer()}}},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4JsonArrayagg)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4JsonArrayagg(*(*partialResult4JsonArrayagg)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4JsonArrayagg, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4JsonArrayagg(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4JsonArrayagg)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4JsonObjectAgg(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	wrapMemAwareMap := func(m map[string]any) (res hack.MemAwareMap[string, any]) {
+		res.Init(m)
+		return res
+	}
+
+	// Initialize test data
+	expectData := []partialResult4JsonObjectAgg{
+		{entries: wrapMemAwareMap(map[string]any{"123": int64(1), "234": float64(1.1), "999": true, "235": "123"})},
+		{entries: wrapMemAwareMap(map[string]any{"啊": testLongStr1, "我": float64(1.1), "反": int64(456)})},
+		{entries: wrapMemAwareMap(map[string]any{"fe": testLongStr1, " ": int64(36798), "888": false, "": testLongStr2})},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4JsonObjectAgg)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4JsonObjectAgg(*(*partialResult4JsonObjectAgg)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4JsonObjectAgg, testDataNum+1)
+	index := 0
+	for {
+		success, _ := deserializeHelper.deserializePartialResult4JsonObjectAgg(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4JsonObjectAgg)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowDecimal(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowDecimal{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: *types.NewDecFromInt(0)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: *types.NewDecFromInt(123)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: *types.NewDecFromInt(12345)},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowDecimal)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowDecimal(*(*partialResult4FirstRowDecimal)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowDecimal, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowDecimal(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowDecimal)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowInt(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowInt{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: -123},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: 0},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: 123},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowInt)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowInt(*(*partialResult4FirstRowInt)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowInt, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowInt(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowInt)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowTime(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowTime{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.NewTime(0, 0, 1)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: types.NewTime(123, 0, 1)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: types.NewTime(456, 0, 1)},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowTime)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowTime(*(*partialResult4FirstRowTime)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowTime, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowTime(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowTime)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowString(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowString{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: ""},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: testLongStr1},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowString)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowString(*(*partialResult4FirstRowString)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowString, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowString(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowString)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowFloat32(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowFloat32{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: -1.1},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: 0},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: 1.1},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowFloat32)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowFloat32(*(*partialResult4FirstRowFloat32)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowFloat32, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowFloat32(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowFloat32)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowFloat64(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowFloat64{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: -1.1},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: 0},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: 1.1},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowFloat64)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowFloat64(*(*partialResult4FirstRowFloat64)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowFloat64, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowFloat64(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowFloat64)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowDuration(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowDuration{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.NewDuration(1, 2, 3, 4, 5)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: types.NewDuration(0, 0, 0, 0, 0)},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: true}, val: types.NewDuration(10, 20, 30, 40, 50)},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowDuration)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowDuration(*(*partialResult4FirstRowDuration)(pr))
+		chunk.AppendBytes(0, serializedData)
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowDuration, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowDuration(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowDuration)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowJSON(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowJSON{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: false, gotFirstRow: false}, val: types.BinaryJSON{TypeCode: 6, Value: []byte{}}},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.BinaryJSON{TypeCode: 8, Value: getLargeRandBuffer()}},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowJSON)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowJSON(*(*partialResult4FirstRowJSON)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowJSON, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowJSON(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowJSON)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowEnum(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowEnum{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.Enum{Name: string(""), Value: 123}},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.Enum{Name: testLongStr2, Value: 999}},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowEnum)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowEnum(*(*partialResult4FirstRowEnum)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowEnum, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowEnum(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowEnum)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
+
+func TestPartialResult4FirstRowSet(t *testing.T) {
+	serializeHelper := NewSerializeHelper()
+	bufSizeChecker := newBufferSizeChecker()
+
+	// Initialize test data
+	expectData := []partialResult4FirstRowSet{
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.Set{Name: string(""), Value: 123}},
+		{basePartialResult4FirstRow: basePartialResult4FirstRow{isNull: true, gotFirstRow: false}, val: types.Set{Name: testLongStr1, Value: 999}},
+	}
+	serializedPartialResults := make([]PartialResult, len(expectData))
+	testDataNum := len(serializedPartialResults)
+	for i := range serializedPartialResults {
+		pr := new(partialResult4FirstRowSet)
+		*pr = expectData[i]
+		serializedPartialResults[i] = PartialResult(pr)
+	}
+
+	// Serialize test data
+	chunk := getChunk()
+	for _, pr := range serializedPartialResults {
+		serializedData := serializeHelper.serializePartialResult4FirstRowSet(*(*partialResult4FirstRowSet)(pr))
+		chunk.AppendBytes(0, serializedData)
+		require.True(t, bufSizeChecker.checkBufferCapacity(serializeHelper))
+	}
+
+	// Deserialize test data
+	deserializeHelper := newDeserializeHelper(chunk.Column(0), testDataNum)
+	deserializedPartialResults := make([]partialResult4FirstRowSet, testDataNum+1)
+	index := 0
+	for {
+		success := deserializeHelper.deserializePartialResult4FirstRowSet(&deserializedPartialResults[index])
+		if !success {
+			break
+		}
+		index++
+	}
+
+	chunk.Column(0).DestroyDataForTest()
+
+	// Check some results
+	require.Equal(t, testDataNum, index)
+	for i := range testDataNum {
+		require.Equal(t, *(*partialResult4FirstRowSet)(serializedPartialResults[i]), deserializedPartialResults[i])
+	}
+}
