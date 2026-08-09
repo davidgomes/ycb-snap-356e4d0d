@@ -1,0 +1,1333 @@
+//                           _       _
+// __      _____  __ ___   ___  __ _| |_ ___
+// \ \ /\ / / _ \/ _` \ \ / / |/ _` | __/ _ \
+//  \ V  V /  __/ (_| |\ V /| | (_| | ||  __/
+//   \_/\_/ \___|\__,_| \_/ |_|\__,_|\__\___|
+//
+//  Copyright © 2016 - 2026 Weaviate B.V. All rights reserved.
+//
+//  CONTACT: hello@weaviate.io
+//
+
+package dynamic
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.etcd.io/bbolt"
+
+	"github.com/weaviate/weaviate/adapters/repos/db/lsmkv"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/common"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/compressionhelpers"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/hnsw"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/hnsw/distancer"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/noop"
+	"github.com/weaviate/weaviate/adapters/repos/db/vector/testinghelpers"
+	entcfg "github.com/weaviate/weaviate/entities/config"
+	"github.com/weaviate/weaviate/entities/cyclemanager"
+	"github.com/weaviate/weaviate/entities/storobj"
+	ent "github.com/weaviate/weaviate/entities/vectorindex/dynamic"
+	flatent "github.com/weaviate/weaviate/entities/vectorindex/flat"
+	hnswent "github.com/weaviate/weaviate/entities/vectorindex/hnsw"
+	"github.com/weaviate/weaviate/usecases/memwatch"
+)
+
+var logger, _ = test.NewNullLogger()
+
+func TestDynamic(t *testing.T) {
+	ctx := context.Background()
+	dimensions := 20
+	vectors_size := 1_000
+	queries_size := 10
+	k := 10
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+	rootPath := t.TempDir()
+	distancer := distancer.NewL2SquaredProvider()
+	truths := make([][]uint64, queries_size)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+	})
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+	dynamic, err := New(Config{
+		AllocChecker:          memwatch.NewDummyMonitor(),
+		RootPath:              rootPath,
+		ID:                    "nil-vector-test",
+		MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+		DistanceProvider:      distancer,
+		VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+			vec := vectors[int(id)]
+			if vec == nil {
+				return nil, storobj.NewErrNotFoundf(id, "nil vec")
+			}
+			return vec, nil
+		},
+		GetViewThunk:                 GetViewThunk,
+		TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+		TombstoneCallbacks:           noopCallback,
+		SharedDB:                     db,
+		MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+		AsyncIndexingEnabled:         true,
+	}, ent.UserConfig{
+		Threshold: uint64(vectors_size),
+		Distance:  distancer.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}, testinghelpers.NewDummyStore(t))
+	assert.Nil(t, err)
+
+	compressionhelpers.Concurrently(logger, uint64(vectors_size), func(i uint64) {
+		err := dynamic.Add(ctx, i, vectors[i])
+		require.NoError(t, err)
+	})
+	shouldUpgrade, at := dynamic.ShouldUpgrade()
+	assert.True(t, shouldUpgrade)
+	assert.Equal(t, vectors_size, at)
+	assert.False(t, dynamic.Upgraded())
+	recall1, latency1 := testinghelpers.RecallAndLatency(ctx, queries, k, dynamic, truths)
+	t.Logf("recall: %f, latency %f\n", recall1, latency1)
+	assert.True(t, recall1 > 0.99)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	err = dynamic.Upgrade(func() {
+		wg.Done()
+	})
+	require.NoError(t, err)
+	wg.Wait()
+	shouldUpgrade, _ = dynamic.ShouldUpgrade()
+	assert.False(t, shouldUpgrade)
+	recall2, latency2 := testinghelpers.RecallAndLatency(ctx, queries, k, dynamic, truths)
+	t.Logf("recall: %f, latency %f\n", recall2, latency2)
+	assert.True(t, recall2 > 0.9)
+}
+
+func TestDynamicReturnsErrorIfNoAsync(t *testing.T) {
+	rootPath := t.TempDir()
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.NewDefaultUserConfig()
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	distancer := distancer.NewL2SquaredProvider()
+	_, err = New(Config{
+		AllocChecker:          memwatch.NewDummyMonitor(),
+		RootPath:              rootPath,
+		ID:                    "nil-vector-test",
+		MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+		DistanceProvider:      distancer,
+		VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+			return nil, nil
+		},
+		GetViewThunk:                 GetViewThunk,
+		TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(nil),
+		TombstoneCallbacks:           noopCallback,
+		SharedDB:                     db,
+		MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+		AsyncIndexingEnabled:         false, // Explicitly set to false to test error condition
+	}, ent.UserConfig{
+		Threshold: uint64(100),
+		Distance:  distancer.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}, testinghelpers.NewDummyStore(t))
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "async indexing")
+}
+
+func TempVectorForIDThunk(vectors [][]float32) func(context.Context, uint64, *common.VectorSlice) ([]float32, error) {
+	return func(ctx context.Context, id uint64, container *common.VectorSlice) ([]float32, error) {
+		copy(container.Slice, vectors[int(id)])
+		return vectors[int(id)], nil
+	}
+}
+
+func TempVectorForIDWithViewThunk(vectors [][]float32) func(context.Context, uint64, *common.VectorSlice, common.BucketView) ([]float32, error) {
+	return func(ctx context.Context, id uint64, container *common.VectorSlice, view common.BucketView) ([]float32, error) {
+		copy(container.Slice, vectors[int(id)])
+		return vectors[int(id)], nil
+	}
+}
+
+func GetViewThunk() common.BucketView {
+	return &noopBucketView{}
+}
+
+type noopBucketView struct{}
+
+func (n *noopBucketView) ReleaseView() {}
+
+func TestDynamicWithTargetVectors(t *testing.T) {
+	ctx := context.Background()
+	dimensions := 20
+	vectors_size := 1_000
+	queries_size := 10
+	k := 10
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+	rootPath := t.TempDir()
+	distancer := distancer.NewL2SquaredProvider()
+	truths := make([][]uint64, queries_size)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+	})
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+
+	var indexes []*dynamic
+
+	for i := 0; i < 5; i++ {
+		dynamic, err := New(Config{
+			AllocChecker:          memwatch.NewDummyMonitor(),
+			TargetVector:          "target_" + strconv.Itoa(i),
+			RootPath:              rootPath,
+			ID:                    "nil-vector-test_" + strconv.Itoa(i),
+			MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+			DistanceProvider:      distancer,
+			VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+				vec := vectors[int(id)]
+				if vec == nil {
+					return nil, storobj.NewErrNotFoundf(id, "nil vec")
+				}
+				return vec, nil
+			},
+			GetViewThunk:                 GetViewThunk,
+			TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+			TombstoneCallbacks:           noopCallback,
+			SharedDB:                     db,
+			MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			AsyncIndexingEnabled:         true,
+		}, ent.UserConfig{
+			Threshold: uint64(vectors_size),
+			Distance:  distancer.Type(),
+			HnswUC:    hnswuc,
+			FlatUC:    fuc,
+		}, testinghelpers.NewDummyStore(t))
+		require.NoError(t, err)
+
+		indexes = append(indexes, dynamic)
+	}
+
+	for _, v := range indexes {
+		v := v
+		compressionhelpers.Concurrently(logger, uint64(vectors_size), func(i uint64) {
+			v.Add(ctx, i, vectors[i])
+		})
+		shouldUpgrade, at := v.ShouldUpgrade()
+		assert.True(t, shouldUpgrade)
+		assert.Equal(t, vectors_size, at)
+		assert.False(t, v.Upgraded())
+		recall1, latency1 := testinghelpers.RecallAndLatency(ctx, queries, k, v, truths)
+		t.Logf("recall: %f, latency %f\n", recall1, latency1)
+		assert.True(t, recall1 > 0.99)
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		v.Upgrade(func() {
+			wg.Done()
+		})
+		wg.Wait()
+		shouldUpgrade, _ = v.ShouldUpgrade()
+		assert.False(t, shouldUpgrade)
+		recall2, latency2 := testinghelpers.RecallAndLatency(ctx, queries, k, v, truths)
+		t.Logf("recall: %f, latency %f\n", recall2, latency2)
+		assert.True(t, recall2 > 0.9)
+	}
+}
+
+func TestDynamicUpgradeCancelation(t *testing.T) {
+	ctx := context.Background()
+	dimensions := 20
+	vectors_size := 1_000
+	queries_size := 10
+	k := 10
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+	rootPath := t.TempDir()
+	distancer := distancer.NewL2SquaredProvider()
+	truths := make([][]uint64, queries_size)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+	})
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+
+	dynamic, err := New(Config{
+		AllocChecker:          memwatch.NewDummyMonitor(),
+		RootPath:              rootPath,
+		ID:                    "foo",
+		MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+		DistanceProvider:      distancer,
+		VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+			vec := vectors[int(id)]
+			if vec == nil {
+				return nil, storobj.NewErrNotFoundf(id, "nil vec")
+			}
+			return vec, nil
+		},
+		GetViewThunk:                 GetViewThunk,
+		TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+		TombstoneCallbacks:           noopCallback,
+		SharedDB:                     db,
+		MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+		AsyncIndexingEnabled:         true,
+	}, ent.UserConfig{
+		Threshold: uint64(vectors_size),
+		Distance:  distancer.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}, testinghelpers.NewDummyStore(t))
+	require.NoError(t, err)
+
+	compressionhelpers.Concurrently(logger, uint64(vectors_size), func(i uint64) {
+		dynamic.Add(ctx, i, vectors[i])
+	})
+
+	shouldUpgrade, at := dynamic.ShouldUpgrade()
+	require.True(t, shouldUpgrade)
+	require.Equal(t, vectors_size, at)
+	require.False(t, dynamic.Upgraded())
+
+	called := make(chan struct{})
+	dynamic.Upgrade(func() {
+		close(called)
+	})
+
+	// close the index to cancel the upgrade
+	err = dynamic.Shutdown(context.Background())
+	require.NoError(t, err)
+
+	require.False(t, dynamic.status.IsUpgraded())
+
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upgrade callback was not called")
+	}
+}
+
+// newUpgradeTestDynamic builds a minimal dynamic index with vectorsSize indexed
+// vectors and ShouldUpgrade()==true, for exercising Upgrade's retry/re-entrancy paths.
+func newUpgradeTestDynamic(t *testing.T, vectorsSize int) *dynamic {
+	t.Helper()
+	ctx := context.Background()
+	dimensions := 4
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	vectors, _ := testinghelpers.RandomVecs(vectorsSize, 0, dimensions)
+	dist := distancer.NewL2SquaredProvider()
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+
+	dyn, err := New(Config{
+		AllocChecker:          memwatch.NewDummyMonitor(),
+		RootPath:              t.TempDir(),
+		ID:                    "upgrade-retry-test",
+		MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+		DistanceProvider:      dist,
+		VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+			vec := vectors[int(id)]
+			if vec == nil {
+				return nil, storobj.NewErrNotFoundf(id, "nil vec")
+			}
+			return vec, nil
+		},
+		GetViewThunk:                 GetViewThunk,
+		TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+		TombstoneCallbacks:           noopCallback,
+		SharedDB:                     db,
+		MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+		AsyncIndexingEnabled:         true,
+	}, ent.UserConfig{
+		Threshold: uint64(vectorsSize),
+		Distance:  dist.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}, testinghelpers.NewDummyStore(t))
+	require.NoError(t, err)
+
+	for i, v := range vectors {
+		require.NoError(t, dyn.Add(ctx, uint64(i), v))
+	}
+
+	shouldUpgrade, _ := dyn.ShouldUpgrade()
+	require.True(t, shouldUpgrade)
+	require.False(t, dyn.Upgraded())
+
+	return dyn
+}
+
+// Regression test (weaviate/0-weaviate-issues#296): a failed or panicked
+// upgrade attempt (GoWrapper recovers the panic) must still fire the callback
+// and re-arm status so a later Upgrade call can retry.
+func TestDynamicUpgradeRetriesAfterFailedAttempt(t *testing.T) {
+	cases := []struct {
+		name string
+		hook func() error
+	}{
+		{"error", func() error { return errors.New("injected upgrade failure") }},
+		{"panic", func() error { panic("injected upgrade panic") }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "panic" && entcfg.Enabled(os.Getenv("DISABLE_RECOVERY_ON_PANIC")) {
+				// without GoWrapper's recover the panic kills the process by
+				// design; retry-after-panic only exists in recovery mode.
+				t.Skip("panic recovery disabled")
+			}
+			dyn := newUpgradeTestDynamic(t, 10)
+			realUpgrade := dyn.upgradeFn
+			dyn.upgradeFn = tc.hook
+
+			firstCallback := make(chan struct{})
+			require.NoError(t, dyn.Upgrade(func() { close(firstCallback) }))
+			select {
+			case <-firstCallback:
+			case <-time.After(5 * time.Second):
+				t.Fatal("first upgrade callback was not invoked")
+			}
+			require.False(t, dyn.IsUpgraded(), "a failed attempt must not report as upgraded")
+
+			// restore the real rebuild so the retry can actually complete.
+			dyn.upgradeFn = realUpgrade
+
+			secondCallback := make(chan struct{})
+			require.NoError(t, dyn.Upgrade(func() { close(secondCallback) }))
+			select {
+			case <-secondCallback:
+			case <-time.After(5 * time.Second):
+				t.Fatal("second upgrade callback was not invoked -- status stuck, retry never ran")
+			}
+			require.True(t, dyn.IsUpgraded(), "the retried upgrade must actually complete")
+		})
+	}
+}
+
+// Regression test: a mid-upgrade Upgrade call must invoke its own callback
+// immediately instead of blocking on the in-flight attempt.
+func TestDynamicUpgradeMidFlightInvokesCallerCallbackImmediately(t *testing.T) {
+	dyn := newUpgradeTestDynamic(t, 10)
+
+	block := make(chan struct{})
+	dyn.upgradeFn = func() error {
+		<-block
+		return nil
+	}
+
+	firstCallback := make(chan struct{})
+	require.NoError(t, dyn.Upgrade(func() { close(firstCallback) }))
+	// TryUpgrading flips status synchronously, so this is guaranteed "mid-upgrade".
+	require.True(t, dyn.status.IsUpgrading())
+
+	secondCallback := make(chan struct{})
+	require.NoError(t, dyn.Upgrade(func() { close(secondCallback) }))
+
+	select {
+	case <-secondCallback:
+	default:
+		t.Fatal("a mid-upgrade Upgrade call must invoke its own callback synchronously")
+	}
+
+	select {
+	case <-firstCallback:
+		t.Fatal("the in-flight attempt's callback must not have fired yet")
+	default:
+	}
+
+	close(block)
+	select {
+	case <-firstCallback:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first upgrade callback was never invoked after unblocking")
+	}
+}
+
+// Regression test: Upgrade after Shutdown must invoke the callback inline,
+// since no goroutine is spawned to do it later.
+func TestDynamicUpgradeAfterShutdownInvokesCallbackSynchronously(t *testing.T) {
+	dyn := newUpgradeTestDynamic(t, 10)
+
+	require.NoError(t, dyn.Shutdown(context.Background()))
+
+	called := false
+	err := dyn.Upgrade(func() { called = true })
+	require.Error(t, err)
+	require.True(t, called, "Upgrade must invoke the callback even when it short-circuits on a closed context")
+}
+
+func TestDynamicUpgradeCompression(t *testing.T) {
+	// Similar to BQ we need to ensure we can upgrade to a little endian quantization like with PQ
+	// See this PR for details https://github.com/weaviate/weaviate/pull/8617
+	tests := []struct {
+		name            string
+		setupFlatConfig func(*flatent.UserConfig)
+		setupHNSWConfig func(*hnswent.UserConfig, int)
+		compressed      bool
+	}{
+		{
+			name: "BQ->Uncompressed",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.BQ = flatent.CompressionUserConfig{
+					Enabled: true,
+					Cache:   true,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+			},
+			compressed: false,
+		},
+		{
+			name: "RQ->Uncompressed",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.RQ = flatent.RQUserConfig{
+					Enabled: true,
+					Bits:    1,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+			},
+			compressed: false,
+		},
+		{
+			name: "BQ->PQ",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.BQ = flatent.CompressionUserConfig{
+					Enabled: true,
+					Cache:   true,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.PQ = hnswent.PQConfig{
+					Enabled:        true,
+					BitCompression: false,
+					Segments:       5,
+					Centroids:      255,
+					TrainingLimit:  threshold - 1,
+					Encoder: hnswent.PQEncoder{
+						Type:         hnswent.PQEncoderTypeKMeans,
+						Distribution: hnswent.PQEncoderDistributionLogNormal,
+					},
+				}
+			},
+			compressed: true,
+		},
+		{
+			name: "BQ->SQ",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.BQ = flatent.CompressionUserConfig{
+					Enabled: true,
+					Cache:   true,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.SQ = hnswent.SQConfig{
+					Enabled: true,
+				}
+			},
+			compressed: true,
+		},
+		{
+			name: "RQ->PQ",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.RQ = flatent.RQUserConfig{
+					Enabled: true,
+					Cache:   true,
+					Bits:    8,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.PQ = hnswent.PQConfig{
+					Enabled:        true,
+					BitCompression: false,
+					Segments:       5,
+					Centroids:      255,
+					TrainingLimit:  threshold - 1,
+					Encoder: hnswent.PQEncoder{
+						Type:         hnswent.PQEncoderTypeKMeans,
+						Distribution: hnswent.PQEncoderDistributionLogNormal,
+					},
+				}
+			},
+			compressed: true,
+		},
+		{
+			name: "BQ->RQ",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.BQ = flatent.CompressionUserConfig{
+					Enabled: true,
+					Cache:   true,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.RQ = hnswent.RQConfig{
+					Enabled: true,
+					Bits:    1,
+				}
+			},
+			compressed: true,
+		},
+		{
+			name: "RQ->BQ",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.RQ = flatent.RQUserConfig{
+					Enabled: true,
+					Bits:    1,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.BQ = hnswent.BQConfig{
+					Enabled: true,
+				}
+			},
+			compressed: true,
+		},
+		{
+			name: "RQ1->RQ8",
+			setupFlatConfig: func(fuc *flatent.UserConfig) {
+				fuc.RQ = flatent.RQUserConfig{
+					Enabled: true,
+					Cache:   true,
+					Bits:    1,
+				}
+			},
+			setupHNSWConfig: func(hnswuc *hnswent.UserConfig, threshold int) {
+				hnswuc.RQ = hnswent.RQConfig{
+					Enabled: true,
+					Bits:    8,
+				}
+			},
+			compressed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			t.Setenv("ASYNC_INDEXING", "true")
+			dimensions := 20
+			vectors_size := 1_000
+			threshold := 600
+			queries_size := 10
+			k := 10
+
+			tempDir := t.TempDir()
+
+			db, err := bbolt.Open(filepath.Join(tempDir, "index.db"), 0o666, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				db.Close()
+			})
+
+			vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+			rootPath := tempDir
+			distancer := distancer.NewL2SquaredProvider()
+			truths := make([][]uint64, queries_size)
+			compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+				truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+			})
+			noopCallback := cyclemanager.NewCallbackGroupNoop()
+			fuc := flatent.UserConfig{}
+			fuc.SetDefaults()
+			tt.setupFlatConfig(&fuc)
+			hnswuc := hnswent.UserConfig{
+				MaxConnections:        30,
+				EFConstruction:        64,
+				EF:                    32,
+				VectorCacheMaxObjects: 1_000_000,
+			}
+			hnswuc.SetDefaults()
+			tt.setupHNSWConfig(&hnswuc, threshold)
+
+			config := Config{
+				AllocChecker: memwatch.NewDummyMonitor(),
+				TargetVector: "",
+				RootPath:     rootPath,
+				ID:           "vector-test_0",
+				MakeCommitLoggerThunk: func(opts ...hnsw.CommitlogOption) (hnsw.CommitLogger, error) {
+					return hnsw.NewCommitLogger(tempDir, "vector-test_0", logger, noopCallback, opts...)
+				},
+				DistanceProvider: distancer,
+				VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+					vec := vectors[int(id)]
+					if vec == nil {
+						return nil, storobj.NewErrNotFoundf(id, "nil vec")
+					}
+					return vec, nil
+				},
+				GetViewThunk:                 GetViewThunk,
+				TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+				TombstoneCallbacks:           noopCallback,
+				SharedDB:                     db,
+				HNSWWaitForCachePrefill:      true,
+				AsyncIndexingEnabled:         true,
+				MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			}
+			uc := ent.UserConfig{
+				Threshold: uint64(threshold),
+				Distance:  distancer.Type(),
+				HnswUC:    hnswuc,
+				FlatUC:    fuc,
+			}
+
+			dummyStore := testinghelpers.NewDummyStore(t)
+			dynamic, err := New(config, uc, dummyStore)
+			require.NoError(t, err)
+
+			compressionhelpers.Concurrently(logger, uint64(threshold), func(i uint64) {
+				err := dynamic.Add(ctx, i, vectors[i])
+				require.NoError(t, err)
+			})
+			shouldUpgrade, at := dynamic.ShouldUpgrade()
+			assert.True(t, shouldUpgrade)
+			assert.Equal(t, threshold, at)
+			assert.False(t, dynamic.Upgraded())
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			err = dynamic.Upgrade(func() {
+				wg.Done()
+			})
+			require.NoError(t, err)
+			wg.Wait()
+
+			// For PQ / SQ we trigger the Upgrade for manual compression
+			if hnswuc.PQ.Enabled || hnswuc.SQ.Enabled {
+				var wg sync.WaitGroup
+				wg.Add(1)
+
+				err = dynamic.Upgrade(func() {
+					wg.Done()
+				})
+				require.NoError(t, err)
+				wg.Wait()
+			}
+
+			compressionhelpers.Concurrently(logger, uint64(vectors_size-threshold), func(i uint64) {
+				err := dynamic.Add(ctx, uint64(threshold)+i, vectors[threshold+int(i)])
+				require.NoError(t, err)
+			})
+
+			recall, latency := testinghelpers.RecallAndLatency(ctx, queries, k, dynamic, truths)
+			require.Greater(t, recall, float32(0.55))
+			t.Logf("recall: %f, latency %f\n", recall, latency)
+
+			err = dynamic.Flush()
+			require.NoError(t, err)
+			err = dynamic.Shutdown(t.Context())
+			require.NoError(t, err)
+			dummyStore.FlushMemtables(t.Context())
+
+			dynamic, err = New(config, uc, dummyStore)
+			require.NoError(t, err)
+			dynamic.PostStartup(context.Background())
+			require.Equal(t, dynamic.Compressed(), tt.compressed)
+			recall2, _ := testinghelpers.RecallAndLatency(ctx, queries, k, dynamic, truths)
+			assert.Equal(t, recall, recall2)
+		})
+	}
+}
+
+func TestDynamicIndexUnderlyingIndexDetection(t *testing.T) {
+	tests := []struct {
+		name           string
+		underlyingType common.IndexType
+		expectedString string
+		expectedType   common.IndexType
+	}{
+		{
+			name:           "dynamic index with flat underlying",
+			underlyingType: common.IndexTypeFlat,
+			expectedString: "flat",
+			expectedType:   common.IndexTypeFlat,
+		},
+		{
+			name:           "dynamic index with hnsw underlying",
+			underlyingType: common.IndexTypeHNSW,
+			expectedString: "hnsw",
+			expectedType:   common.IndexTypeHNSW,
+		},
+		{
+			name:           "dynamic index with dynamic underlying",
+			underlyingType: common.IndexTypeDynamic,
+			expectedString: "dynamic",
+			expectedType:   common.IndexTypeDynamic,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock that implements the UnderlyingIndex method
+			mockDynamicIndex := NewMockIndex(t)
+			mockDynamicIndex.EXPECT().UnderlyingIndex().Return(tt.underlyingType)
+
+			// Test the method directly
+			underlyingType := mockDynamicIndex.UnderlyingIndex()
+
+			// Assert the returned type
+			assert.Equal(t, tt.expectedType, underlyingType, "Should return correct underlying index type")
+
+			// Assert the string conversion
+			assert.Equal(t, tt.expectedString, underlyingType.String(), "Should convert to correct string")
+		})
+	}
+}
+
+func TestDynamicAndStoreOperations(t *testing.T) {
+	ctx := context.Background()
+	dimensions := 20
+	vectors_size := 1_000
+	queries_size := 10
+	k := 10
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+	rootPath := t.TempDir()
+	distancer := distancer.NewL2SquaredProvider()
+	truths := make([][]uint64, queries_size)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+	})
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+	dynamic, err := New(Config{
+		AllocChecker:          memwatch.NewDummyMonitor(),
+		RootPath:              rootPath,
+		ID:                    "nil-vector-test",
+		MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+		DistanceProvider:      distancer,
+		VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+			vec := vectors[int(id)]
+			if vec == nil {
+				return nil, storobj.NewErrNotFoundf(id, "nil vec")
+			}
+			return vec, nil
+		},
+		GetViewThunk:                 GetViewThunk,
+		TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+		TombstoneCallbacks:           noopCallback,
+		SharedDB:                     db,
+		MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+		AsyncIndexingEnabled:         true,
+	}, ent.UserConfig{
+		Threshold: uint64(vectors_size),
+		Distance:  distancer.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}, testinghelpers.NewDummyStore(t))
+	assert.Nil(t, err)
+
+	compressionhelpers.Concurrently(logger, uint64(vectors_size), func(i uint64) {
+		err := dynamic.Add(ctx, i, vectors[i])
+		require.NoError(t, err)
+	})
+
+	shouldUpgrade, at := dynamic.ShouldUpgrade()
+	assert.True(t, shouldUpgrade)
+	assert.Equal(t, vectors_size, at)
+	assert.False(t, dynamic.Upgraded())
+
+	ch := make(chan struct{})
+	idx := noop.Index{
+		AddFn: func(ctx context.Context, id uint64, vector []float32) error {
+			<-ch
+			return nil
+		},
+	}
+
+	go func() {
+		err := dynamic.copyToVectorIndex(&idx)
+		require.NoError(t, err)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	for i := 0; i < 100; i++ {
+		err = dynamic.store.Bucket(dynamic.getBucketName()).FlushAndSwitch()
+		time.Sleep(1 * time.Millisecond)
+		require.NoError(t, err)
+	}
+
+	close(ch)
+}
+
+// TestDynamicStoreMigrationBug tests the migration process, added to fix a bug
+// where named vectors would all use the same boltdb bucket key after upgrade.
+func TestDynamicStoreMigrationBug(t *testing.T) {
+	ctx := context.Background()
+	dimensions := 20
+	vectors_size := 1_000
+	queries_size := 10
+	k := 10
+
+	db, err := bbolt.Open(filepath.Join(t.TempDir(), "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Close()
+	})
+
+	// update the boltdb with the old bugged state
+	err = db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(dynamicBucket)
+		if err != nil {
+			return err
+		}
+
+		// set the upgraded flag
+		return b.Put([]byte(composerUpgradedKey), []byte{1})
+	})
+	require.NoError(t, err)
+
+	vectors, queries := testinghelpers.RandomVecs(vectors_size, queries_size, dimensions)
+	rootPath := t.TempDir()
+	distancer := distancer.NewL2SquaredProvider()
+	truths := make([][]uint64, queries_size)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors, queries[i], k, testinghelpers.DistanceWrapper(distancer))
+	})
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        30,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+
+	var indexes []*dynamic
+
+	for i := 0; i < 5; i++ {
+		dynamic, err := New(Config{
+			TargetVector:          "target_" + strconv.Itoa(i),
+			RootPath:              rootPath,
+			ID:                    "nil-vector-test_" + strconv.Itoa(i),
+			AllocChecker:          memwatch.NewDummyMonitor(),
+			MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+			DistanceProvider:      distancer,
+			VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+				vec := vectors[int(id)]
+				if vec == nil {
+					return nil, storobj.NewErrNotFoundf(id, "nil vec")
+				}
+				return vec, nil
+			},
+			GetViewThunk:                 GetViewThunk,
+			TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+			TombstoneCallbacks:           noopCallback,
+			SharedDB:                     db,
+			MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			AsyncIndexingEnabled:         true,
+		}, ent.UserConfig{
+			Threshold: uint64(vectors_size),
+			Distance:  distancer.Type(),
+			HnswUC:    hnswuc,
+			FlatUC:    fuc,
+		}, testinghelpers.NewDummyStore(t))
+		require.NoError(t, err)
+
+		indexes = append(indexes, dynamic)
+	}
+
+	for _, v := range indexes {
+		compressionhelpers.Concurrently(logger, uint64(vectors_size), func(i uint64) {
+			v.Add(ctx, i, vectors[i])
+		})
+		shouldUpgrade, at := v.ShouldUpgrade()
+		assert.True(t, shouldUpgrade)
+		assert.Equal(t, vectors_size, at)
+		assert.False(t, v.Upgraded())
+		recall1, latency1 := testinghelpers.RecallAndLatency(ctx, queries, k, v, truths)
+		fmt.Println(recall1, latency1)
+		assert.True(t, recall1 > 0.99)
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		v.Upgrade(func() {
+			wg.Done()
+		})
+		wg.Wait()
+		shouldUpgrade, _ = v.ShouldUpgrade()
+		assert.False(t, shouldUpgrade)
+		recall2, latency2 := testinghelpers.RecallAndLatency(ctx, queries, k, v, truths)
+		fmt.Println(recall2, latency2)
+		assert.True(t, recall2 > 0.9)
+	}
+
+	// check the content of the bolt db
+	err = db.View(func(tx *bbolt.Tx) error {
+		for i := 0; i < 5; i++ {
+			b := tx.Bucket(dynamicBucket)
+			require.NotNil(t, b, "bucket should exist")
+
+			upgraded := b.Get([]byte(composerUpgradedKey + "_target_" + strconv.Itoa(i)))
+			require.Equal(t, []byte{1}, upgraded)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// close the indexes
+	for _, v := range indexes {
+		err := v.Shutdown(context.Background())
+		require.NoError(t, err)
+	}
+
+	indexes = indexes[:0]
+
+	// open them again to ensure the state is correct
+	for i := 0; i < 5; i++ {
+		dynamic, err := New(Config{
+			TargetVector:          "target_" + strconv.Itoa(i),
+			RootPath:              rootPath,
+			ID:                    "nil-vector-test_" + strconv.Itoa(i),
+			AllocChecker:          memwatch.NewDummyMonitor(),
+			MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+			DistanceProvider:      distancer,
+			VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+				vec := vectors[int(id)]
+				if vec == nil {
+					return nil, storobj.NewErrNotFoundf(id, "nil vec")
+				}
+				return vec, nil
+			},
+			GetViewThunk:                 GetViewThunk,
+			TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+			TombstoneCallbacks:           noopCallback,
+			SharedDB:                     db,
+			MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			AsyncIndexingEnabled:         true,
+		}, ent.UserConfig{
+			Threshold: uint64(vectors_size),
+			Distance:  distancer.Type(),
+			HnswUC:    hnswuc,
+			FlatUC:    fuc,
+		}, testinghelpers.NewDummyStore(t))
+		require.NoError(t, err)
+
+		indexes = append(indexes, dynamic)
+	}
+
+	// check the upgraded state
+	for _, v := range indexes {
+		shouldUpgrade, _ := v.ShouldUpgrade()
+		require.False(t, shouldUpgrade)
+		require.True(t, v.IsUpgraded())
+	}
+
+	// check the content of the bolt db
+	err = db.View(func(tx *bbolt.Tx) error {
+		for i := 0; i < 5; i++ {
+			b := tx.Bucket(dynamicBucket)
+			require.NotNil(t, b, "bucket should exist")
+
+			upgraded := b.Get([]byte(composerUpgradedKey + "_target_" + strconv.Itoa(i)))
+			require.Equal(t, []byte{1}, upgraded)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// close the indexes
+	for _, v := range indexes {
+		err := v.Shutdown(context.Background())
+		require.NoError(t, err)
+	}
+
+	indexes = indexes[:0]
+
+	// we know have 5 upgraded target vectors.
+	// let's now simulate a similar case where they all share the same key
+	// but this time they are already upgraded.
+	err = db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(dynamicBucket)
+
+		// delete all individual upgraded keys
+		for i := 0; i < 5; i++ {
+			err := b.Delete([]byte(composerUpgradedKey + "_target_" + strconv.Itoa(i)))
+			require.NoError(t, err)
+		}
+
+		// set the old upgraded key
+		return b.Put([]byte(composerUpgradedKey), []byte{1})
+	})
+	require.NoError(t, err)
+
+	// in this scenario, we must not lose the upgraded state
+	for i := 0; i < 5; i++ {
+		dynamic, err := New(Config{
+			TargetVector:          "target_" + strconv.Itoa(i),
+			RootPath:              rootPath,
+			ID:                    "nil-vector-test_" + strconv.Itoa(i),
+			AllocChecker:          memwatch.NewDummyMonitor(),
+			MakeCommitLoggerThunk: hnsw.MakeNoopCommitLogger,
+			DistanceProvider:      distancer,
+			VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+				vec := vectors[int(id)]
+				if vec == nil {
+					return nil, storobj.NewErrNotFoundf(id, "nil vec")
+				}
+				return vec, nil
+			},
+			GetViewThunk:                 GetViewThunk,
+			TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+			TombstoneCallbacks:           noopCallback,
+			SharedDB:                     db,
+			MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			AsyncIndexingEnabled:         true,
+		}, ent.UserConfig{
+			Threshold: uint64(vectors_size),
+			Distance:  distancer.Type(),
+			HnswUC:    hnswuc,
+			FlatUC:    fuc,
+		}, testinghelpers.NewDummyStore(t))
+		require.NoError(t, err)
+
+		indexes = append(indexes, dynamic)
+	}
+
+	// check the upgraded state
+	for _, v := range indexes {
+		shouldUpgrade, _ := v.ShouldUpgrade()
+		require.False(t, shouldUpgrade)
+		require.True(t, v.IsUpgraded())
+	}
+
+	// check the content of the bolt db
+	err = db.View(func(tx *bbolt.Tx) error {
+		for i := 0; i < 5; i++ {
+			b := tx.Bucket(dynamicBucket)
+			require.NotNil(t, b, "bucket should exist")
+
+			upgraded := b.Get([]byte(composerUpgradedKey + "_target_" + strconv.Itoa(i)))
+			require.Equal(t, []byte{1}, upgraded)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+// TestDynamicStaleCommitLogCleanedOnRestart is a regression test for a
+// compact-v2 HNSW loader bug. When a flat→HNSW upgrade is interrupted
+// (e.g. context canceled during shard teardown), the HNSW commit log
+// directory may contain partial WAL data from that attempt.  On the next
+// shard startup the dynamic index is re-created with upgraded=false, but
+// the commit log directory persists on disk.  hnsw.New() then calls the
+// compact-v2 Loader which — unlike the compactor — explicitly includes the
+// live WAL file in its startup scan.  This causes the new HNSW to start in
+// a partially-built state with stale compressed-vector dimensions, producing
+// "vector lengths don't match" panics at search time.
+//
+// The fix: dynamic.init() removes the commit log directory whenever
+// upgraded=false, enforcing the invariant that an unupgraded shard has no
+// HNSW commit log state.
+func TestDynamicStaleCommitLogCleanedOnRestart(t *testing.T) {
+	ctx := context.Background()
+	const (
+		dimensions  = 8
+		vectorsSize = 200
+		queriesSize = 10
+		k           = 10
+		threshold   = 100
+	)
+
+	tempDir := t.TempDir()
+	db, err := bbolt.Open(filepath.Join(tempDir, "index.db"), 0o666, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	vectors, queries := testinghelpers.RandomVecs(vectorsSize, queriesSize, dimensions)
+	dist := distancer.NewL2SquaredProvider()
+	// Truths are computed only against the first `threshold` vectors, since that
+	// is what we add to dyn2 before upgrading — the recall check would be unfairly
+	// low if truths include vectors that were never indexed.
+	truths := make([][]uint64, queriesSize)
+	compressionhelpers.Concurrently(logger, uint64(len(queries)), func(i uint64) {
+		truths[i], _ = testinghelpers.BruteForce(logger, vectors[:threshold], queries[i], k, testinghelpers.DistanceWrapper(dist))
+	})
+
+	noopCallback := cyclemanager.NewCallbackGroupNoop()
+	fuc := flatent.UserConfig{}
+	fuc.SetDefaults()
+	// BQ on the flat side matches the bq_dynamic scenario in the failing CI test.
+	fuc.BQ = flatent.CompressionUserConfig{Enabled: true, Cache: true}
+	hnswuc := hnswent.UserConfig{
+		MaxConnections:        16,
+		EFConstruction:        64,
+		EF:                    32,
+		VectorCacheMaxObjects: 1_000_000,
+	}
+	hnswuc.SetDefaults()
+
+	indexID := "stale-cl-test"
+	makeConfig := func() Config {
+		return Config{
+			AllocChecker: memwatch.NewDummyMonitor(),
+			RootPath:     tempDir,
+			ID:           indexID,
+			MakeCommitLoggerThunk: func(opts ...hnsw.CommitlogOption) (hnsw.CommitLogger, error) {
+				return hnsw.NewCommitLogger(tempDir, indexID, logger, noopCallback, opts...)
+			},
+			DistanceProvider: dist,
+			VectorForIDThunk: func(ctx context.Context, id uint64) ([]float32, error) {
+				vec := vectors[int(id)]
+				if vec == nil {
+					return nil, storobj.NewErrNotFoundf(id, "nil vec")
+				}
+				return vec, nil
+			},
+			GetViewThunk:                 GetViewThunk,
+			TempVectorForIDWithViewThunk: TempVectorForIDWithViewThunk(vectors),
+			TombstoneCallbacks:           noopCallback,
+			SharedDB:                     db,
+			MakeBucketOptions:            lsmkv.MakeNoopBucketOptions,
+			AsyncIndexingEnabled:         true,
+		}
+	}
+	uc := ent.UserConfig{
+		Threshold: uint64(threshold),
+		Distance:  dist.Type(),
+		HnswUC:    hnswuc,
+		FlatUC:    fuc,
+	}
+
+	// --- First shard lifetime: add vectors, trigger upgrade, cancel via shutdown ---
+
+	dyn1, err := New(makeConfig(), uc, testinghelpers.NewDummyStore(t))
+	require.NoError(t, err)
+
+	compressionhelpers.Concurrently(logger, uint64(threshold), func(i uint64) {
+		require.NoError(t, dyn1.Add(ctx, i, vectors[i]))
+	})
+	shouldUpgrade, _ := dyn1.ShouldUpgrade()
+	require.True(t, shouldUpgrade)
+	require.False(t, dyn1.Upgraded())
+
+	upgradeDone := make(chan struct{})
+	dyn1.Upgrade(func() { close(upgradeDone) })
+	// Shutdown cancels the upgrade context before it can commit the DB flag.
+	require.NoError(t, dyn1.Shutdown(context.Background()))
+	select {
+	case <-upgradeDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upgrade callback not called after shutdown")
+	}
+	require.False(t, dyn1.IsUpgraded(), "upgrade must not have committed")
+
+	// Simulate stale WAL left by the aborted upgrade: if the shutdown was fast
+	// enough that hnsw.New() never ran, plant the directory+file manually.
+	// Either way, after this block the commit log dir exists and is non-empty.
+	commitLogDir := hnswCommitLogDirectory(tempDir, indexID)
+	require.NoError(t, os.MkdirAll(commitLogDir, 0o755))
+	staleFile := filepath.Join(commitLogDir, "000000000001.wal")
+	require.NoError(t, os.WriteFile(staleFile, []byte("stale partial wal data"), 0o644))
+
+	_, err = os.Stat(staleFile)
+	require.NoError(t, err, "stale commit log file must exist before shard restart")
+
+	// --- Second shard lifetime: shard is recreated (same rootPath, same DB) ---
+	// init() must clean the commit log directory because upgraded=false.
+
+	dyn2, err := New(makeConfig(), uc, testinghelpers.NewDummyStore(t))
+	require.NoError(t, err)
+
+	_, statErr := os.Stat(commitLogDir)
+	require.True(t, os.IsNotExist(statErr),
+		"init() must remove the stale HNSW commit log dir when upgraded=false")
+
+	// --- Upgrade on the clean shard must succeed without dimension mismatch ---
+
+	compressionhelpers.Concurrently(logger, uint64(threshold), func(i uint64) {
+		require.NoError(t, dyn2.Add(ctx, i, vectors[i]))
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	require.NoError(t, dyn2.Upgrade(func() { wg.Done() }))
+	wg.Wait()
+	// IsUpgraded() is the canonical "flat→HNSW swap committed" flag (status only);
+	// dynamic.Upgraded() additionally requires HNSW to be compressed, which is not
+	// configured in this test, so we check the status flag directly.
+	require.True(t, dyn2.IsUpgraded(), "upgrade must have committed to HNSW")
+
+	// Searches must return correct results — no "vector lengths don't match" panic.
+	recall, _ := testinghelpers.RecallAndLatency(ctx, queries, k, dyn2, truths)
+	require.Greater(t, recall, float32(0.7))
+
+	require.NoError(t, dyn2.Shutdown(context.Background()))
+}
